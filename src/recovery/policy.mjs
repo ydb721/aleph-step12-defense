@@ -9,7 +9,10 @@ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 export const TRUSTED_POLICY_SHA256 = 'a28720a1eac019a429c4923ff6dfbced56c931233a53e99196c1e728bf515ac5';
 export const RECOVERY_INCIDENT_AT = '2026-10-13T00:00:00.000Z';
 
-export const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+export const sha256 = (value) => {
+  const canonical = typeof value === 'string' ? value.replace(/\r\n/gu, '\n') : value;
+  return createHash('sha256').update(canonical).digest('hex');
+};
 const fail = (code) => { throw new Error(code); };
 
 function checkedTime(value) {
