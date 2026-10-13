@@ -1,19 +1,15 @@
-import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createLoginVerifier } from '../src/verify-login.mjs';
 
 const require = createRequire(import.meta.url);
 const config = require('../aleph.config.json');
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+const sha256Pattern = /^[0-9a-f]{64}$/u;
+const changedFieldNames = new Set(['title', 'content', 'create']);
 
 let verifier;
 function getVerifier() {
-  if (!verifier) {
-    verifier = createLoginVerifier({
-      config,
-      supabaseSecretKey: process.env.SUPABASE_SECRET_KEY,
-    });
-  }
+  if (!verifier) verifier = createLoginVerifier({ config, supabaseSecretKey: process.env.SUPABASE_SECRET_KEY });
   return verifier;
 }
 
@@ -29,159 +25,85 @@ function bearerOrCookie(req) {
   const cookie = String(req.headers.cookie || '').split(';').map((part) => part.trim())
     .find((part) => part.startsWith('__Host-byteback-access='));
   if (!cookie) return undefined;
-  try {
-    return 'Bearer ' + decodeURIComponent(cookie.slice(cookie.indexOf('=') + 1));
-  } catch {
-    return undefined;
-  }
+  try { return 'Bearer ' + decodeURIComponent(cookie.slice(cookie.indexOf('=') + 1)); }
+  catch { return undefined; }
 }
 
-// 복원 사본의 "내용"은 제목 + NUL 구분자 + 본문 전체로 고정합니다.
-// 제목만 변조돼도 같은 내용으로 취급하지 않기 위해 둘을 함께 SHA-256 합니다.
-export function memoContentSha256(title, content) {
-  return createHash('sha256')
-    .update(String(title), 'utf8')
-    .update('\0')
-    .update(String(content), 'utf8')
-    .digest('hex');
-}
-
-function headers(extra = {}) {
+function rpcHeaders() {
   const key = process.env.SUPABASE_SECRET_KEY;
-  return {
-    apikey: key,
-    Authorization: 'Bearer ' + key,
-    'Content-Type': 'application/json',
-    ...extra,
-  };
+  return { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' };
 }
 
-function tableUrl(name) {
-  return new URL('/rest/v1/' + name, process.env.SUPABASE_URL);
-}
-
-async function readRows(url) {
-  const response = await fetch(url, { method: 'GET', headers: headers(), redirect: 'error' });
-  let data;
-  try { data = await response.json(); } catch { data = null; }
-  if (!response.ok || !Array.isArray(data)) throw new Error('upstream_read_failed');
-  return data;
-}
-
-function validBackup(row, id, ownerId) {
-  return row && row.public_id === id && row.owner_id === ownerId
-    && typeof row.title === 'string' && typeof row.content === 'string'
-    && typeof row.content_sha256 === 'string'
-    && /^[0-9a-f]{64}$/u.test(row.content_sha256)
-    && memoContentSha256(row.title, row.content) === row.content_sha256;
-}
-
-async function restoreOne(actorId, memoId) {
-  // 1) 복원 실행 직전에 비공개 사본을 다시 읽고 ID·소유자·제목+본문 해시를 검증합니다.
-  const backupUrl = tableUrl('memo_restore_backups');
-  backupUrl.searchParams.set('select', 'public_id,owner_id,title,content,content_sha256');
-  backupUrl.searchParams.set('public_id', 'eq.' + memoId);
-  backupUrl.searchParams.set('owner_id', 'eq.' + actorId);
-  backupUrl.searchParams.set('limit', '2');
-  const backups = await readRows(backupUrl);
-
-  if (backups.length === 0) return { status: 404, body: { error: 'BACKUP_NOT_FOUND' } };
-  if (backups.length !== 1 || !validBackup(backups[0], memoId, actorId)) {
-    return { status: 409, body: { error: 'BACKUP_UNVERIFIED' } };
-  }
-  const backup = backups[0];
-
-  // 2) 현재 메모를 ID로 읽어 다른 소유자의 같은 ID를 절대 덮어쓰지 않습니다.
-  const currentUrl = tableUrl('memos');
-  currentUrl.searchParams.set('select', 'public_id,owner_id,title,content');
-  currentUrl.searchParams.set('public_id', 'eq.' + memoId);
-  currentUrl.searchParams.set('limit', '2');
-  const currentRows = await readRows(currentUrl);
-  if (currentRows.length > 1) return { status: 409, body: { error: 'RESTORE_CONFLICT' } };
-
-  const current = currentRows[0] ?? null;
-  if (current && current.owner_id !== actorId) {
-    return { status: 404, body: { error: 'BACKUP_NOT_FOUND' } };
-  }
-
-  const beforeHash = current ? memoContentSha256(current.title, current.content ?? '') : null;
-  const alreadyMatches = current
-    && current.public_id === backup.public_id
-    && current.owner_id === backup.owner_id
-    && beforeHash === backup.content_sha256;
-
-  // 3) 지정한 한 건만 복원합니다. 있으면 소유자까지 조건으로 수정하고, 없으면 같은 ID로 다시 만듭니다.
-  if (!alreadyMatches) {
-    const writeUrl = tableUrl('memos');
-    let response;
-    if (current) {
-      writeUrl.searchParams.set('public_id', 'eq.' + memoId);
-      writeUrl.searchParams.set('owner_id', 'eq.' + actorId);
-      response = await fetch(writeUrl, {
-        method: 'PATCH',
-        headers: headers({ Prefer: 'return=representation' }),
-        body: JSON.stringify({ title: backup.title, content: backup.content }),
-        redirect: 'error',
-      });
-    } else {
-      response = await fetch(writeUrl, {
-        method: 'POST',
-        headers: headers({ Prefer: 'return=representation' }),
-        body: JSON.stringify({
-          public_id: backup.public_id,
-          owner_id: backup.owner_id,
-          title: backup.title,
-          content: backup.content,
-        }),
-        redirect: 'error',
-      });
-    }
-
-    let written;
-    try { written = await response.json(); } catch { written = null; }
-    if (!response.ok || !Array.isArray(written) || written.length !== 1) {
-      return { status: 502, body: { error: 'RESTORE_WRITE_FAILED' } };
-    }
-  }
-
-  // 4) 쓴 뒤 DB에서 다시 읽어 ID·소유자·제목+본문 해시가 사본과 정확히 같은지 확인합니다.
-  const checkUrl = tableUrl('memos');
-  checkUrl.searchParams.set('select', 'public_id,owner_id,title,content');
-  checkUrl.searchParams.set('public_id', 'eq.' + memoId);
-  checkUrl.searchParams.set('owner_id', 'eq.' + actorId);
-  checkUrl.searchParams.set('limit', '2');
-  const afterRows = await readRows(checkUrl);
-  const after = afterRows.length === 1 ? afterRows[0] : null;
-  const afterHash = after ? memoContentSha256(after.title, after.content ?? '') : null;
-
-  if (!after || after.public_id !== backup.public_id || after.owner_id !== backup.owner_id
-      || afterHash !== backup.content_sha256) {
-    return { status: 500, body: { error: 'RESTORE_MISMATCH' } };
-  }
-
-  // 기존 감사 이력을 지우지 않고 복원 성공 기록 한 줄만 덧붙입니다.
-  const auditUrl = tableUrl('memo_restore_audit');
-  const audit = await fetch(auditUrl, {
+async function rpc(name, body) {
+  const response = await fetch(new URL('/rest/v1/rpc/' + name, process.env.SUPABASE_URL), {
     method: 'POST',
-    headers: headers({ Prefer: 'return=minimal' }),
-    body: JSON.stringify({
-      actor_id: actorId,
-      memo_public_id: memoId,
-      backup_sha256: backup.content_sha256,
-      action: 'memo_restore',
-    }),
+    headers: rpcHeaders(),
+    body: JSON.stringify(body),
     redirect: 'error',
   });
-  if (!audit.ok) return { status: 502, body: { error: 'RESTORE_AUDIT_FAILED' } };
+  let data;
+  try { data = await response.json(); } catch { data = null; }
 
-  return {
-    status: 200,
-    body: {
-      id: backup.public_id,
-      restored: true,
-      contentSha256: backup.content_sha256,
-    },
-  };
+  if (!response.ok) {
+    const code = typeof data?.code === 'string' ? data.code : '';
+    if (code === '42883' || code === 'PGRST202') {
+      return { status: 503, body: { error: 'RESTORE_NOT_READY' } };
+    }
+    return { status: 409, body: { error: 'BACKUP_UNVERIFIED' } };
+  }
+  return { status: 200, body: data };
+}
+
+function validPreview(value, memoId) {
+  return value
+    && typeof value === 'object'
+    && value.id === memoId
+    && value.verified === true
+    && sha256Pattern.test(value.version ?? '')
+    && sha256Pattern.test(value.stateVersion ?? '')
+    && typeof value.capturedAt === 'string'
+    && Array.isArray(value.changedFields)
+    && value.changedFields.every((field) => changedFieldNames.has(field));
+}
+
+async function previewRestore(actorId, memoId) {
+  const result = await rpc('preview_memo_recovery', {
+    p_actor: actorId,
+    p_public_id: memoId,
+  });
+  if (result.status !== 200) return result;
+  if (!validPreview(result.body, memoId)) {
+    return { status: 409, body: { error: 'BACKUP_UNVERIFIED' } };
+  }
+  return { status: 200, body: result.body };
+}
+
+async function restoreMemo(actorId, memoId, expectedVersion, expectedState) {
+  // 1차 읽기: 검증된 사본 버전과 현재 대상 상태 버전을 확인한다.
+  const preview = await previewRestore(actorId, memoId);
+  if (preview.status !== 200) return preview;
+
+  if (expectedVersion !== undefined && expectedVersion !== preview.body.version) {
+    return { status: 409, body: { error: 'BACKUP_CHANGED' } };
+  }
+  if (expectedState !== undefined && expectedState !== preview.body.stateVersion) {
+    return { status: 409, body: { error: 'TARGET_CHANGED' } };
+  }
+
+  // 실제 복원 RPC는 트랜잭션 잠금 뒤 사본과 대상을 다시 읽어
+  // 위 version/stateVersion과 같은 경우에만 한 건을 복원한다.
+  const result = await rpc('restore_verified_memo', {
+    p_actor: actorId,
+    p_public_id: memoId,
+    p_expected_version: preview.body.version,
+    p_expected_state: preview.body.stateVersion,
+  });
+  if (result.status !== 200) return result;
+  if (!result.body || result.body.id !== memoId || result.body.verified !== true) {
+    return { status: 409, body: { error: 'RESTORE_MISMATCH' } };
+  }
+
+  return { status: 200, body: { id: memoId, restored: true, verified: true } };
 }
 
 export default async function handler(req, res) {
@@ -191,11 +113,9 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
   }
-
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) {
     return res.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' });
   }
-
   if (!req.headers.authorization && req.headers.origin
       && req.headers.origin !== 'https://' + req.headers.host) {
     return res.status(403).json({ error: 'ORIGIN_REJECTED' });
@@ -210,13 +130,33 @@ export default async function handler(req, res) {
 
   const body = readBody(req);
   if (!body || typeof body !== 'object' || Array.isArray(body)
-      || Object.keys(body).sort().join(',') !== 'id'
       || typeof body.id !== 'string' || !uuidPattern.test(body.id)) {
     return res.status(400).json({ error: 'INVALID_RESTORE_REQUEST' });
   }
 
+  const allowedKeys = new Set(['id', 'preview', 'expectedVersion', 'expectedState']);
+  if (Object.keys(body).some((key) => !allowedKeys.has(key))
+      || (body.preview !== undefined && body.preview !== true)
+      || (body.expectedVersion !== undefined && !sha256Pattern.test(body.expectedVersion))
+      || (body.expectedState !== undefined && !sha256Pattern.test(body.expectedState))
+      || (body.preview === true
+        && (body.expectedVersion !== undefined || body.expectedState !== undefined))) {
+    return res.status(400).json({ error: 'INVALID_RESTORE_REQUEST' });
+  }
+
+  const memoId = body.id.toLowerCase();
+
   try {
-    const result = await restoreOne(identity.userId, body.id.toLowerCase());
+    if (body.preview === true) {
+      const preview = await previewRestore(identity.userId, memoId);
+      return res.status(preview.status).json(preview.body);
+    }
+    const result = await restoreMemo(
+      identity.userId,
+      memoId,
+      body.expectedVersion,
+      body.expectedState,
+    );
     return res.status(result.status).json(result.body);
   } catch {
     return res.status(502).json({ error: 'UPSTREAM_REQUEST_FAILED' });
