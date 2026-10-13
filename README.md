@@ -325,3 +325,14 @@ GitHub 기본 브랜치에서 아래 1단계 가상 메모 본문 문장을 각�
 ## 빌드
 
 Vercel은 `vercel.json`의 `npm run build`를 실행하고 `public`을 배포합니다. 빌드 과정에서 `public/aleph.json`을 자동 생성합니다.
+
+
+### 10단계 보완 재시험 결과
+
+- 정책 사본 검증: `npm.cmd run policy:diff`에서 검증 사본과 정책 차이 없음 확인
+- 정책 복원 미리보기: `npm.cmd run policy:restore`에서 되돌릴 항목 없음 확인
+- 메모 복원 사본 해시: 제목 UTF-8 + NUL(0x00) + 본문 UTF-8의 SHA-256으로 검증
+- B 시험 메모 제목을 `훈련 행정 자료 (복구 재시험)`으로 변경 후 `POST /api/restore` 실행
+- 실제 배포 응답: HTTP 200, `restored: true`, `contentSha256` 반환
+- 새로고침 후 제목이 `훈련 행정 자료`로 원상복구됨
+- 복원 전 비공개 사본을 다시 읽어 ID·소유자·내용 해시를 검증하고, 복원 후 DB를 다시 읽어 동일성을 확인함
