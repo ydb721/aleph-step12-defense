@@ -29,13 +29,23 @@ export async function runAttackChecks(config) {
       || direct.protocol !== 'https:') throw new Error('HTTPS 주소를 확인해 주세요.');
 
   const options = () => ({redirect: 'error', signal: AbortSignal.timeout(10000)});
-  const list = await fetch(new URL('/api/memos',base),options());
+  const checkedFetch = async (label, url) => {
+    try {
+      return await fetch(url, options());
+    } catch (error) {
+      const detail = error?.cause?.code ?? error?.message ?? 'unknown_error';
+      throw new Error(`${label} 요청 실패: ${detail}`);
+    }
+  };
+
+  const list = await checkedFetch('메모 목록', new URL('/api/memos',base));
   let jsonError = false;
   try { jsonError = typeof (await list.json())?.error === 'string'; } catch { /* non-json */ }
 
-  const single = await fetch(new URL('/api/memos/11111111-1111-4111-8111-111111111111',base),options());
-  const staticRes = await fetch(new URL('/data.json',base),options());
-  const deployed = await fetch(new URL('/aleph.json',base),options());
+  const single = await checkedFetch('메모 단건',
+    new URL('/api/memos/11111111-1111-4111-8111-111111111111',base));
+  const staticRes = await checkedFetch('data.json', new URL('/data.json',base));
+  const deployed = await checkedFetch('aleph.json', new URL('/aleph.json',base));
   let noStatic = staticRes.status === 404;
   if(staticRes.ok) {
     try {
@@ -45,7 +55,7 @@ export async function runAttackChecks(config) {
   }
 
   // Direct access using an anon/publishable key is checked by the judge, not by this script.
-  const directRes = await fetch(direct,options());
+  const directRes = await checkedFetch('원본 API', direct);
   return [
     {attackId:'unauthenticated_memo_list',expected:'401/403 JSON 오류',
       observed:[401,403].includes(list.status)&&jsonError?'비로그인 목록 거부, JSON 오류':'HTTP '+list.status+', JSON='+jsonError},
