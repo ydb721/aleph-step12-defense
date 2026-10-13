@@ -61,7 +61,13 @@ async function callRestore(actorId, memoId) {
   if (message.includes('backup_owner_mismatch')) return { status: 403, error: 'BACKUP_OWNER_MISMATCH' };
   if (message.includes('backup_hash_mismatch')) return { status: 409, error: 'BACKUP_HASH_MISMATCH' };
   if (message.includes('restore_verify_failed')) return { status: 502, error: 'RESTORE_VERIFY_FAILED' };
-  return { status: 502, error: 'RESTORE_FAILED' };
+
+  return {
+    status: 502,
+    error: 'RESTORE_FAILED',
+    upstreamStatus: response.status,
+    upstreamCode: typeof data?.code === 'string' ? data.code : null,
+  };
 }
 
 export default async function handler(req, res) {
@@ -97,7 +103,13 @@ export default async function handler(req, res) {
 
   try {
     const result = await callRestore(identity.userId, body.id);
-    if (result.error) return res.status(result.status).json({ error: result.error });
+    if (result.error) {
+      return res.status(result.status).json({
+        error: result.error,
+        ...(result.upstreamStatus ? { upstreamStatus: result.upstreamStatus } : {}),
+        ...(result.upstreamCode ? { upstreamCode: result.upstreamCode } : {}),
+      });
+    }
 
     const value = result.data;
     if (!value || value.restored !== true || value.id !== body.id
