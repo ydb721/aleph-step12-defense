@@ -1,0 +1,39 @@
+{
+  "schema": "aleph.policy.verified.v1",
+  "label": "9단계 저장점 (심판 100/100)",
+  "verifiedCommit": "847972a71c0f469c330f58b67ea1dbc3893cfec3",
+  "verifiedStage": 9,
+  "evidence": "9단계 심판 100/100",
+  "note": "10단계 복원 기준용 읽기 전용 정책 사본 목록. 실제 운영 정책과 DB 자료는 포함하지 않음.",
+  "files": {
+    "src/decider.mjs": {
+      "blob": "df9bcb24741a83ed4a66e41cae952b46e79be4f5"
+    },
+    "src/detect.mjs": {
+      "blob": "721e79eceed50790a392c33d69e5d60f6133a107"
+    },
+    "src/verify-login.mjs": {
+      "blob": "784ec5af7067e01c6b7f83cf423db0b8c63d9e09"
+    },
+    "src/resource-ids.mjs": {
+      "blob": "4dc0b160f92cdb7eff898da6d1cd0eba7259922e"
+    },
+    "api/memos.js": {
+      "blob": "3a5b9ddca731c96db99d794e0674e3f9dc00e996"
+    },
+    "api/notices.js": {
+      "blob": "99ff277f3c4104c177d3632e49d878c8e464945a"
+    },
+    "aleph.config.json": {
+      "blob": "109911e22c9bcc5431ba2c0b3fc2befbde4a076f",
+      "policyKeys": [
+        "identityProvider",
+        "allowedRoutes",
+        "originalApiUrl"
+      ]
+    },
+    "vercel.json": {
+      "blob": "c9946daa21a070d4809cd24711e59d59f0a5f995"
+    }
+  }
+}
