@@ -19,6 +19,10 @@
 4. `node --test test/step9-revocation.test.mjs` 실행
 5. 의심 사건은 확인된 기기 1개에만 회수 제안, 정상 사건은 제안 없음 확인
 
+### 9단계 제출 전 보완
+
+로컬 `npm.cmd run bundle` 중 원본 Supabase API DNS 조회가 `ENOTFOUND`로 실패함. 프로젝트 설정의 Supabase URL과 `aleph.config.json.originalApiUrl`을 대조해 주소 일치를 확인했고, 원본 API 자기점검만 네트워크 실패를 `점검 미완료`로 기록하도록 변경함. Vercel 자기점검은 기존처럼 실패 시 bundle을 중단함.
+
 ### 9단계 검증 범위
 
 - 현재 `DETECT_EVENTS.md` 기본 사건 계약에는 네트워크·기기·판정 필드가 없음
