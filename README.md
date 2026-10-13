@@ -338,3 +338,12 @@ Vercel은 `vercel.json`의 `npm run build`를 실행하고 `public`을 배포합
 - 실제 배포 응답: HTTP 200, `restored: true`, `contentSha256` 반환
 - 새로고침 후 제목이 `훈련 행정 자료`로 원상복구됨
 - 복원 전 비공개 사본을 다시 읽어 ID·소유자·내용 해시를 검증하고, 복원 후 DB를 다시 읽어 동일성을 확인함
+
+
+### 10단계 최종 정책 복구 재시험
+
+- `policy:test`: pass 4 / fail 0
+- 검증 사본 SHA-256 확인 후 복원 버전·변경 범위 미리보기 확인
+- 시험 정책을 `unsafe_v2`로 변경한 뒤 확인값을 사용해 `stage9_verified`로 복원
+- 복원 후 `policy:diff`에서 변경 범위 없음 확인
+- 실제 운영 정책과 다른 서비스·감사 이력은 변경하지 않음
