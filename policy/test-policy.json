@@ -1,0 +1,28 @@
+{
+  "schema": "aleph.recovery.test-policy.v1",
+  "services": {
+    "notes": {
+      "version": "stage9_verified",
+      "ownerOnly": true,
+      "rules": [
+        "device_registered",
+        "step_up_required",
+        "resource_scope",
+        "burst_read_revocation"
+      ]
+    },
+    "otherService": {
+      "version": "unchanged",
+      "ownerOnly": true,
+      "rules": [
+        "keep_existing"
+      ]
+    }
+  },
+  "audit": [
+    {
+      "id": "historic",
+      "kind": "preserve"
+    }
+  ]
+}
