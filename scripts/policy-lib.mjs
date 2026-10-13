@@ -8,6 +8,21 @@ export const MANIFEST = 'policy/verified-policy.json';
 const SHA = /^[0-9a-f]{40}$/u;
 const KEY = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
 
+const TRUSTED_VERIFIED_COMMIT = '847972a71c0f469c330f58b67ea1dbc3893cfec3';
+const TRUSTED_FILES = {
+  'src/decider.mjs': { blob: 'df9bcb24741a83ed4a66e41cae952b46e79be4f5' },
+  'src/detect.mjs': { blob: '721e79eceed50790a392c33d69e5d60f6133a107' },
+  'src/verify-login.mjs': { blob: '784ec5af7067e01c6b7f83cf423db0b8c63d9e09' },
+  'src/resource-ids.mjs': { blob: '4dc0b160f92cdb7eff898da6d1cd0eba7259922e' },
+  'api/memos.js': { blob: '3a5b9ddca731c96db99d794e0674e3f9dc00e996' },
+  'api/notices.js': { blob: '99ff277f3c4104c177d3632e49d878c8e464945a' },
+  'aleph.config.json': {
+    blob: '109911e22c9bcc5431ba2c0b3fc2befbde4a076f',
+    policyKeys: ['identityProvider', 'allowedRoutes', 'originalApiUrl'],
+  },
+  'vercel.json': { blob: 'c9946daa21a070d4809cd24711e59d59f0a5f995' },
+};
+
 const gitRaw = (...args) => execFileSync('git', ['-C', root, ...args], {
   encoding: 'utf8',
   timeout: 10000,
@@ -23,6 +38,28 @@ const normalizeText = (value) => value.replace(/\r\n/gu, '\n');
 
 function policySubset(json, keys) {
   return JSON.stringify(Object.fromEntries(keys.map((key) => [key, json[key] ?? null])));
+}
+
+function sameTrustedFiles(files) {
+  if (!files || typeof files !== 'object' || Array.isArray(files)) return false;
+  const actualPaths = Object.keys(files).sort();
+  const trustedPaths = Object.keys(TRUSTED_FILES).sort();
+  if (JSON.stringify(actualPaths) !== JSON.stringify(trustedPaths)) return false;
+
+  return trustedPaths.every((path) => {
+    const actual = files[path];
+    const trusted = TRUSTED_FILES[path];
+    if (!actual || typeof actual !== 'object' || Array.isArray(actual)) return false;
+    if (actual.blob !== trusted.blob) return false;
+    return JSON.stringify(actual.policyKeys ?? null) === JSON.stringify(trusted.policyKeys ?? null);
+  });
+}
+
+export function assertTrustedPolicyManifest(manifest) {
+  if (manifest?.verifiedCommit !== TRUSTED_VERIFIED_COMMIT || !sameTrustedFiles(manifest?.files)) {
+    stop('검증된 정책 사본 목록이 신뢰한 9단계 저장점과 다릅니다.');
+  }
+  return true;
 }
 
 export function loadVerifiedPolicy() {
@@ -41,6 +78,10 @@ export function loadVerifiedPolicy() {
       || !manifest.files || typeof manifest.files !== 'object') {
     stop(`${MANIFEST}의 형식이 맞지 않습니다.`);
   }
+
+  // 사본 목록 자체도 신뢰한 9단계 저장점과 정확히 일치해야 합니다.
+  // 파일 목록/지문/검증 커밋이 하나라도 바뀌면 복원 전에 중단합니다.
+  assertTrustedPolicyManifest(manifest);
 
   try {
     git('cat-file', '-e', `${manifest.verifiedCommit}^{commit}`);
