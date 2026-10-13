@@ -113,6 +113,10 @@ function resourceAllowed(request, bindings = loadResourceBindings()) {
   const resource = expectedResource(request);
   if (!resource) return false;
 
+  // The current decision contract has no verified role/instructor field.
+  // Therefore notice writes are never authorized by the decider.
+  if (resource.family === 'notices' && request.method !== 'GET') return false;
+
   return bindings.some((entry) => entry
     && entry.classId === request.classId
     && entry.projectId === request.projectId
@@ -123,8 +127,7 @@ function resourceAllowed(request, bindings = loadResourceBindings()) {
     && entry.resourceId === resource.resourceId
     && Array.isArray(entry.permissions)
     && entry.permissions.includes(request.method)
-    && (resource.family !== 'notes' || entry.ownerSubjectId === request.subjectId)
-    && (resource.family !== 'notices' || request.method !== 'PUT' || entry.instructor === true));
+    && (resource.family !== 'notes' || entry.ownerSubjectId === request.subjectId));
 }
 
 function response(request, decision, reasonCode, ruleId) {
