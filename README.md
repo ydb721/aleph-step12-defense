@@ -1,4 +1,26 @@
-# BYTE BACK 방어전 R6
+# BYTE BACK 방어전 R7
+
+이 저장소는 BYTE BACK 방어전 시작 틀을 기반으로 한 학습용 자료실입니다. 실제 학생 자료, 비밀번호, 토큰, 서버 전용 키는 Git에 넣지 않습니다.
+
+## 현재 단계: 7단계 — 평소와 다른 접속은 다시 확인합니다
+
+현재 기능 (5줄):
+1. 기존 Vercel/Supabase 자료실과 6단계 등록 기기 판정 규칙을 유지
+2. 판정기는 계약의 `signals`·`recentEvents`만 읽고 불명확한 값을 정상값으로 보정하지 않음
+3. 새벽 시간·처음 보는 네트워크·최근 다량 읽기 신호가 함께 있으면 `step_up / step_up_required`
+4. 지역 하나만으로 차단하지 않으며 정상 조합은 `allow / approved`
+5. 엔진이 `stepUp.verified=true`와 유효한 `authAgeSeconds`를 넘긴 새 요청은 다시 허용
+
+### 7단계 확인 순서
+
+1. `npm.cmd run fixture:7` 실행 → 정상 사건 `allow`, 복합 이상 사건 `step_up` 확인
+2. `npm.cmd run decider:test` 실행
+3. 등록 기기의 정상 요청 통과
+4. 미등록 기기의 가상 요청 통과
+5. 복합 이상 접속과 다시 확인한 복합 이상 접속 모두 통과
+
+`npm run fixture:7`과 `npm run decider:test`는 가상 요청 연습이며 실제 심판 판정이나 운영 접속 증거가 아님. 토큰 원문은 기록하지 않음.
+
 
 이 저장소는 BYTE BACK 방어전 시작 틀을 기반으로 한 학습용 자료실입니다. 실제 학생 자료, 비밀번호, 토큰, 서버 전용 키는 Git에 넣지 않습니다.
 
