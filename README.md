@@ -347,3 +347,11 @@ Vercel은 `vercel.json`의 `npm run build`를 실행하고 `public`을 배포합
 - 시험 정책을 `unsafe_v2`로 변경한 뒤 확인값을 사용해 `stage9_verified`로 복원
 - 복원 후 `policy:diff`에서 변경 범위 없음 확인
 - 실제 운영 정책과 다른 서비스·감사 이력은 변경하지 않음
+
+
+### 10단계 최종 복구 API 재검증 결과
+
+- B 시험 메모를 변조한 뒤 `POST /api/restore` 미리보기에서 HTTP 200, `verified: true`, 백업 `version`, 현재 상태 `stateVersion`, `changedFields: ["title"]` 확인
+- 실제 복원 호출에서 미리보기의 `version/stateVersion`을 전달하고, DB 트랜잭션에서 백업과 대상 상태를 다시 읽어 동일할 때만 복원
+- 실제 복원 응답 HTTP 200, `restored: true`, `verified: true` 확인
+- 새로고침 후 B 메모 제목이 `훈련 행정 자료`로 원상복구됨
