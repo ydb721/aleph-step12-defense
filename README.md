@@ -328,6 +328,8 @@ Vercel은 `vercel.json`의 `npm run build`를 실행하고 `public`을 배포합
 
 
 ### 10단계 보완 재시험 결과
+- 정책 사본 신뢰 기준 시험 재확인: `node --test test/step10-policy-backup.test.mjs` → pass 3 / fail 0
+
 
 - 정책 사본 검증: `npm.cmd run policy:diff`에서 검증 사본과 정책 차이 없음 확인
 - 정책 복원 미리보기: `npm.cmd run policy:restore`에서 되돌릴 항목 없음 확인
