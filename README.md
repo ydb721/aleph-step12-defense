@@ -19,6 +19,10 @@
 4. 자기 메모 허용, 다른 사용자 메모 거부, 일반 학생 공지 수정 거부 확인
 5. `/notes/export` 같은 기능 경로와 쿼리 기반 선택이 거부되는지 확인
 
+### 8단계 S08_OTHER_ZONE_ALLOWED 보완
+
+첫 심판 제출에서 다른 구역 자료 API 조회 조건 1건이 실패함. 심판 피드백에 따라 판정 요청 계약에는 강사 역할 정보가 없으므로 `notices` 쓰기(POST/PUT/PATCH/DELETE)는 판정기에서 누구에게나 허용하지 않도록 수정함. 메모 단건의 실제 소유자 비교는 API의 검증된 사용자와 저장된 `owner_id` 대조를 유지함. 자원 바인딩에 `instructor: true`가 있어도 공지 PUT이 `deny / resource_not_allowed`인지 회귀 테스트에 추가했고 `node --test test/step8-resource.test.mjs`에서 pass 2 / fail 0을 확인함.
+
 ### 8단계 검증 범위
 
 - 로컬 가상 판정 시험은 통과했으며 실제 심판 판정과는 별개임
