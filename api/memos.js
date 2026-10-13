@@ -37,6 +37,17 @@ function resultMemo(note) {
   return { id: note.public_id, title: note.title, body: note.content ?? '' };
 }
 
+function ownedBy(note, userId) {
+  return note && typeof note.owner_id === 'string'
+    && note.owner_id.toLowerCase() === userId.toLowerCase();
+}
+
+function hasIdentityClaim(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    && ['owner_id', 'ownerId', 'userId', 'subjectId', 'role']
+      .some((name) => Object.hasOwn(value, name));
+}
+
 async function dbRequest(method, params, payload) {
   const url = new URL('/rest/v1/memos', process.env.SUPABASE_URL);
   Object.entries(params).forEach(([name, value]) => url.searchParams.set(name, value));
@@ -115,16 +126,22 @@ export async function handleMemos(req, res, noteId = null) {
   try {
     if (req.method === 'GET' && !isSingle) {
       const result = await dbRequest('GET', {
-        select: 'public_id,title,content',
+        select: 'public_id,title,content,owner_id',
         owner_id: 'eq.' + identity.userId,
         order: 'created_at.asc',
       });
       if (result.error) return res.status(result.status).json({ error: result.error });
+      if (result.data.some((note) => !ownedBy(note, identity.userId))) {
+        return res.status(403).json({ error: 'OWNER_MISMATCH' });
+      }
       return res.status(200).json(result.data.map(resultMemo));
     }
 
     if (req.method === 'POST') {
       const incoming = readBody(req);
+      if (hasIdentityClaim(incoming)) {
+        return res.status(403).json({ error: 'IDENTITY_CLAIM_FORBIDDEN' });
+      }
       const fields = memoFields(incoming);
       if (!fields || (incoming.id !== undefined
           && (typeof incoming.id !== 'string' || !uuidPattern.test(incoming.id)))) {
@@ -148,20 +165,21 @@ export async function handleMemos(req, res, noteId = null) {
     if (req.method === 'GET') {
       const result = await dbRequest('GET', {
         ...byId,
-        select: 'public_id,title,content',
+        select: 'public_id,title,content,owner_id',
         limit: '1',
       });
       if (result.error) return res.status(result.status).json({ error: result.error });
-      if (!result.data.length) return res.status(404).json({ error: 'MEMO_NOT_FOUND' });
+      if (!result.data.length || !ownedBy(result.data[0], identity.userId)) {
+        return res.status(404).json({ error: 'MEMO_NOT_FOUND' });
+      }
       return res.status(200).json(resultMemo(result.data[0]));
     }
 
     if (req.method === 'PUT') {
       const incoming = readBody(req);
-      // Never accept an owner change or an identity supplied in the request body.
-      if (incoming && typeof incoming === 'object'
-          && (Object.hasOwn(incoming, 'owner_id') || Object.hasOwn(incoming, 'ownerId'))) {
-        return res.status(403).json({ error: 'OWNER_CHANGE_FORBIDDEN' });
+      // Never accept ownership, identity, or role claims supplied in the request body.
+      if (hasIdentityClaim(incoming)) {
+        return res.status(403).json({ error: 'IDENTITY_CLAIM_FORBIDDEN' });
       }
       const fields = memoFields(incoming);
       if (!fields) return res.status(400).json({ error: 'INVALID_MEMO' });
@@ -180,10 +198,12 @@ export async function handleMemos(req, res, noteId = null) {
     if (req.method === 'DELETE') {
       const result = await dbRequest('DELETE', {
         ...byId,
-        select: 'public_id',
+        select: 'public_id,owner_id',
       });
       if (result.error) return res.status(result.status).json({ error: result.error });
-      if (!result.data.length) return res.status(404).json({ error: 'MEMO_NOT_FOUND' });
+      if (!result.data.length || !ownedBy(result.data[0], identity.userId)) {
+        return res.status(404).json({ error: 'MEMO_NOT_FOUND' });
+      }
       return res.status(204).end();
     }
   } catch {
