@@ -68,7 +68,7 @@ begin
     owner_id,
     title,
     coalesce(content, ''),
-    encode(digest(coalesce(content, ''), 'sha256'), 'hex'),
+    encode(extensions.digest(title || chr(0) || coalesce(content, ''), 'sha256'), 'hex'),
     '847972a71c0f469c330f58b67ea1dbc3893cfec3'
   from public.memos
   where owner_id = b_user
@@ -102,7 +102,7 @@ begin
     raise exception using errcode = 'P0001', message = 'backup_owner_mismatch';
   end if;
 
-  if encode(digest(coalesce(b.content, ''), 'sha256'), 'hex') <> b.content_sha256 then
+  if encode(extensions.digest(b.title || chr(0) || coalesce(b.content, ''), 'sha256'), 'hex') <> b.content_sha256 then
     raise exception using errcode = 'P0001', message = 'backup_hash_mismatch';
   end if;
 
@@ -117,7 +117,7 @@ begin
     values (b.public_id, b.owner_id, b.title, b.content);
   end if;
 
-  select encode(digest(coalesce(content, ''), 'sha256'), 'hex')
+  select encode(extensions.digest(title || chr(0) || coalesce(content, ''), 'sha256'), 'hex')
   into restored_hash
   from public.memos
   where public_id = b.public_id
