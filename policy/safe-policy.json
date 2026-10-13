@@ -1,0 +1,16 @@
+{
+  "schema": "aleph.recovery.policy-backup.v1",
+  "serviceId": "notes",
+  "capturedAt": "2026-10-12T00:00:00.000Z",
+  "verifiedAt": "2026-10-12T00:05:00.000Z",
+  "policy": {
+    "version": "stage9_verified",
+    "ownerOnly": true,
+    "rules": [
+      "device_registered",
+      "step_up_required",
+      "resource_scope",
+      "burst_read_revocation"
+    ]
+  }
+}
