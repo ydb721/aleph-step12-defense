@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createLoginVerifier } from '../../src/verify-login.mjs';
 
@@ -84,21 +83,12 @@ function validPreview(value, memoId) {
     && value.changedFields.every((field) => CHANGED.has(field));
 }
 
-function planSha256(preview) {
-  return createHash('sha256').update(JSON.stringify({
-    id: preview.id,
-    version: preview.version,
-    stateVersion: preview.stateVersion,
-    capturedAt: preview.capturedAt,
-    changedFields: preview.changedFields,
-  })).digest('hex');
-}
-
-async function loadPreview(actorId, memoId) {
+async function previewRestore(actorId, memoId) {
   const result = await rpc('preview_memo_recovery', {
     p_actor: actorId,
     p_public_id: memoId,
   });
+
   if (result.status !== 200) return result;
   if (!validPreview(result.body, memoId)) {
     return { status: 409, body: { error: 'BACKUP_UNVERIFIED' } };
@@ -113,7 +103,42 @@ async function loadPreview(actorId, memoId) {
       stateVersion: result.body.stateVersion,
       capturedAt: result.body.capturedAt,
       changedFields: result.body.changedFields,
-      planSha256: planSha256(result.body),
+    },
+  };
+}
+
+async function restoreMemo(actorId, memoId, expectedVersion, expectedState) {
+  // 실행 직전 1차 재조회: 검증된 사본과 현재 대상 상태를 다시 읽습니다.
+  const preview = await previewRestore(actorId, memoId);
+  if (preview.status !== 200) return preview;
+
+  if (expectedVersion !== undefined && expectedVersion !== preview.body.version) {
+    return { status: 409, body: { error: 'BACKUP_CHANGED' } };
+  }
+  if (expectedState !== undefined && expectedState !== preview.body.stateVersion) {
+    return { status: 409, body: { error: 'TARGET_CHANGED' } };
+  }
+
+  // DB 트랜잭션 안에서 사본/대상을 잠근 뒤 다시 읽어
+  // 위 version/stateVersion과 같을 때만 복원합니다.
+  const restored = await rpc('restore_verified_memo', {
+    p_actor: actorId,
+    p_public_id: memoId,
+    p_expected_version: preview.body.version,
+    p_expected_state: preview.body.stateVersion,
+  });
+
+  if (restored.status !== 200) return restored;
+  if (!restored.body || restored.body.id !== memoId || restored.body.verified !== true) {
+    return { status: 409, body: { error: 'RESTORE_MISMATCH' } };
+  }
+
+  return {
+    status: 200,
+    body: {
+      id: memoId,
+      verified: true,
+      restored: true,
     },
   };
 }
@@ -123,8 +148,8 @@ export default async function handler(req, res) {
   res.setHeader('CDN-Cache-Control', 'no-store');
   res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
 
-  if (!['GET', 'POST'].includes(req.method)) {
-    res.setHeader('Allow', 'GET, POST');
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
   }
 
@@ -138,7 +163,7 @@ export default async function handler(req, res) {
   }
   const memoId = routeId.toLowerCase();
 
-  if (req.method === 'POST' && !req.headers.authorization && req.headers.origin
+  if (!req.headers.authorization && req.headers.origin
       && req.headers.origin !== 'https://' + req.headers.host) {
     return res.status(403).json({ error: 'ORIGIN_REJECTED' });
   }
@@ -150,45 +175,32 @@ export default async function handler(req, res) {
   const identity = await verifyLogin(authHeader(req));
   if (!identity) return res.status(401).json({ error: 'AUTH_REQUIRED' });
 
+  const body = readBody(req);
+  if (body != null) {
+    if (typeof body !== 'object' || Array.isArray(body)
+        || Object.keys(body).some((key) => !['preview', 'expectedVersion', 'expectedState'].includes(key))
+        || (body.preview !== undefined && body.preview !== true)
+        || (body.expectedVersion !== undefined && !SHA.test(body.expectedVersion))
+        || (body.expectedState !== undefined && !SHA.test(body.expectedState))
+        || (body.preview === true
+          && (body.expectedVersion !== undefined || body.expectedState !== undefined))) {
+      return res.status(400).json({ error: 'INVALID_RESTORE_REQUEST' });
+    }
+  }
+
   try {
-    // GET은 읽기 전용 미리보기다. 복구할 버전·현재 상태·바뀔 항목과 확인 해시만 반환한다.
-    if (req.method === 'GET') {
-      const preview = await loadPreview(identity.userId, memoId);
+    if (body?.preview === true) {
+      const preview = await previewRestore(identity.userId, memoId);
       return res.status(preview.status).json(preview.body);
     }
 
-    // POST는 GET에서 확인한 planSha256 하나만 받는다.
-    const body = readBody(req);
-    if (!body || typeof body !== 'object' || Array.isArray(body)
-        || Object.keys(body).sort().join(',') !== 'planSha256'
-        || !SHA.test(body.planSha256 ?? '')) {
-      return res.status(400).json({ error: 'PLAN_CONFIRMATION_REQUIRED' });
-    }
-
-    // 실제 쓰기 직전에 백업과 현재 대상 상태를 다시 읽어 새 plan을 만든다.
-    const reread = await loadPreview(identity.userId, memoId);
-    if (reread.status !== 200) return res.status(reread.status).json(reread.body);
-    if (reread.body.planSha256 !== body.planSha256) {
-      return res.status(409).json({ error: 'BACKUP_OR_TARGET_CHANGED' });
-    }
-
-    // DB 함수가 트랜잭션 잠금 뒤 백업/대상 상태를 다시 읽고 version/stateVersion을 대조한다.
-    const restored = await rpc('restore_verified_memo', {
-      p_actor: identity.userId,
-      p_public_id: memoId,
-      p_expected_version: reread.body.version,
-      p_expected_state: reread.body.stateVersion,
-    });
-    if (restored.status !== 200) return res.status(restored.status).json(restored.body);
-    if (!restored.body || restored.body.id !== memoId || restored.body.verified !== true) {
-      return res.status(409).json({ error: 'RESTORE_MISMATCH' });
-    }
-
-    return res.status(200).json({
-      id: memoId,
-      restored: true,
-      verified: true,
-    });
+    const result = await restoreMemo(
+      identity.userId,
+      memoId,
+      body?.expectedVersion,
+      body?.expectedState,
+    );
+    return res.status(result.status).json(result.body);
   } catch {
     return res.status(502).json({ error: 'UPSTREAM_REQUEST_FAILED' });
   }
