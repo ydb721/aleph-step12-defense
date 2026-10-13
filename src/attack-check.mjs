@@ -1,6 +1,6 @@
-// Stage 5 public self-checks; no private keys, credentials, or record bodies.
+// Stage 5+ public self-checks; no private keys, credentials, or record bodies.
 export async function runAttackChecks(config) {
-  if (config.step !== 5) throw new Error('5단계 설정이 아닙니다.');
+  if (config.step < 5) throw new Error('5단계 이상 설정이 필요합니다.');
   const base = new URL(config.publicAppUrl);
   const direct = new URL(config.originalApiUrl);
   if (base.protocol !== 'https:' || !base.hostname.endsWith('.vercel.app')
