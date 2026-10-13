@@ -17,7 +17,6 @@
     "DELETE /api/memos/:id",
     "GET /api/notices/:id",
     "PUT /api/notices/:id",
-    "GET /api/restore/:id",
     "POST /api/restore/:id"
   ],
   "originalApiUrl": "https://pizhdpzwtognhuklasrt.supabase.co/rest/v1/memos",
