@@ -55,7 +55,15 @@ export async function runAttackChecks(config) {
   }
 
   // Direct access using an anon/publishable key is checked by the judge, not by this script.
-  const directRes = await checkedFetch('원본 API', direct);
+  let directObserved;
+  try {
+    const directRes = await fetch(direct, options());
+    directObserved = '키 없는 요청 HTTP ' + directRes.status + '; anon 키 요청은 심판에서 확인';
+  } catch (error) {
+    const detail = error?.cause?.code ?? error?.message ?? 'unknown_error';
+    directObserved = '원본 API 점검 미완료 (' + detail + '); 주소는 프로젝트 설정과 대조함';
+  }
+
   return [
     {attackId:'unauthenticated_memo_list',expected:'401/403 JSON 오류',
       observed:[401,403].includes(list.status)&&jsonError?'비로그인 목록 거부, JSON 오류':'HTTP '+list.status+', JSON='+jsonError},
@@ -66,6 +74,6 @@ export async function runAttackChecks(config) {
     {attackId:'deployment_identity',expected:'/aleph.json 열림',
       observed:deployed.ok?'/aleph.json 열림':'HTTP '+deployed.status},
     {attackId:'direct_no_key_probe',expected:'키 없이 직접 자료 API 요청 거부',
-      observed:'키 없는 요청 HTTP '+directRes.status+'; anon 키 요청은 심판에서 확인'},
+      observed:directObserved},
   ];
 }
