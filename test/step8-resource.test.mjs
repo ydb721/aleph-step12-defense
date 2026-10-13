@@ -49,6 +49,33 @@ test('8단계 자원 구역 판정', async () => {
   }));
   assert.equal(studentNoticeUpdate.decision, 'deny');
   assert.equal(studentNoticeUpdate.reasonCode, 'resource_not_allowed');
+
+  const previousBindings = process.env.ALEPH_RESOURCE_BINDINGS;
+  try {
+    process.env.ALEPH_RESOURCE_BINDINGS = JSON.stringify([{
+      classId: 'class_fixture',
+      projectId: 'project_fixture',
+      subjectId: 'learner_fixture',
+      deviceId: 'aaaaaaaaaaaaaaaa',
+      service: 'notices',
+      path: '/notices/' + noticeId,
+      resourceId: 'notices:' + noticeId,
+      permissions: ['PUT'],
+      instructor: true,
+    }]);
+    const forgedInstructorBinding = await decide(request({
+      requestId: randomUUID(),
+      service: 'notices',
+      method: 'PUT',
+      path: '/notices/' + noticeId,
+      route: 'PUT /notices/:id',
+    }));
+    assert.equal(forgedInstructorBinding.decision, 'deny');
+    assert.equal(forgedInstructorBinding.reasonCode, 'resource_not_allowed');
+  } finally {
+    if (previousBindings === undefined) delete process.env.ALEPH_RESOURCE_BINDINGS;
+    else process.env.ALEPH_RESOURCE_BINDINGS = previousBindings;
+  }
 });
 
 test('기능 경로와 쿼리 선택은 자원으로 허용하지 않음', async () => {
