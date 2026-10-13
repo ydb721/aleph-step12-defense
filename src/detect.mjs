@@ -73,3 +73,33 @@ export function detect(events) {
 
   return { action: 'observe' };
 }
+
+const DEVICE_ID = /^[0-9a-f]{16}$/u;
+
+export function proposeRevocation(detection, verified) {
+  if (!detection || typeof detection !== 'object'
+      || detection.action !== 'propose_revocation'
+      || detection.reasonCode !== 'burst_read'
+      || !validSubject(detection.subject)) {
+    return null;
+  }
+
+  if (!verified || typeof verified !== 'object' || Array.isArray(verified)
+      || Object.keys(verified).sort().join(',') !== 'deviceId,subjectId') {
+    return null;
+  }
+
+  if (verified.subjectId !== detection.subject
+      || !DEVICE_ID.test(verified.deviceId)) {
+    return null;
+  }
+
+  return {
+    action: 'propose_revocation',
+    reasonCode: 'burst_read',
+    target: {
+      subjectId: verified.subjectId,
+      deviceId: verified.deviceId,
+    },
+  };
+}
