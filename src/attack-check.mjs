@@ -1,7 +1,29 @@
-// Stage 5+ public self-checks; no private keys, credentials, or record bodies.
+// Public self-checks; preserve the original stage-1 exposure regression and stage-5+ checks.
 export async function runAttackChecks(config) {
-  if (config.step < 5) throw new Error('5단계 이상 설정이 필요합니다.');
   const base = new URL(config.publicAppUrl);
+
+  if (config.step === 1) {
+    const response = await fetch(new URL('/data.json', base), {
+      redirect: 'error',
+      signal: AbortSignal.timeout(10000),
+    });
+    let exposed = false;
+    try {
+      const body = await response.json();
+      exposed = response.ok
+        && body?.sampleMarker === config.sampleMarker
+        && Array.isArray(body?.notes)
+        && body.notes.length > 0;
+    } catch { exposed = false; }
+
+    return [{
+      attackId: 'public_data_json',
+      expected: '공개 data.json에서 가상 자료 확인',
+      observed: exposed ? '확인 표시가 보임' : '확인 표시가 보이지 않음',
+    }];
+  }
+
+  if (config.step < 5) throw new Error('5단계 이상 설정이 필요합니다.');
   const direct = new URL(config.originalApiUrl);
   if (base.protocol !== 'https:' || !base.hostname.endsWith('.vercel.app')
       || direct.protocol !== 'https:') throw new Error('HTTPS 주소를 확인해 주세요.');
