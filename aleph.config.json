@@ -19,5 +19,5 @@
     "PUT /api/notices/:id"
   ],
   "originalApiUrl": "https://pizhdpzwtognhuklasrt.supabase.co/rest/v1/memos",
-  "restoreRoute": null
+  "restoreRoute": "POST /api/restore"
 }
