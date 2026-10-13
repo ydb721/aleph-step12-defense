@@ -8,13 +8,15 @@ export const MANIFEST = 'policy/verified-policy.json';
 const SHA = /^[0-9a-f]{40}$/u;
 const KEY = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
 
-export const git = (...args) => execFileSync('git', ['-C', root, ...args], {
+const gitRaw = (...args) => execFileSync('git', ['-C', root, ...args], {
   encoding: 'utf8',
   timeout: 10000,
   maxBuffer: 8 * 1024 * 1024,
   windowsHide: true,
   stdio: ['ignore', 'pipe', 'ignore'],
-}).trim();
+});
+
+export const git = (...args) => gitRaw(...args).trim();
 
 const stop = (message) => { throw new Error(message); };
 const normalizeText = (value) => value.replace(/\r\n/gu, '\n');
@@ -60,7 +62,7 @@ export function loadVerifiedPolicy() {
     let baseline;
     try {
       actualBlob = git('rev-parse', `${manifest.verifiedCommit}:${path}`);
-      baseline = git('show', `${manifest.verifiedCommit}:${path}`);
+      baseline = gitRaw('show', `${manifest.verifiedCommit}:${path}`);
     } catch {
       stop(`사본 커밋에 ${path}가 없습니다.`);
     }
