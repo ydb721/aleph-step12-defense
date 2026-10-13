@@ -83,7 +83,7 @@ create or replace function public.restore_memo_from_backup(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   b public.memo_restore_backups%rowtype;
