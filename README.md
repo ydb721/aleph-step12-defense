@@ -355,3 +355,11 @@ Vercel은 `vercel.json`의 `npm run build`를 실행하고 `public`을 배포합
 - 실제 복원 호출에서 미리보기의 `version/stateVersion`을 전달하고, DB 트랜잭션에서 백업과 대상 상태를 다시 읽어 동일할 때만 복원
 - 실제 복원 응답 HTTP 200, `restored: true`, `verified: true` 확인
 - 새로고침 후 B 메모 제목이 `훈련 행정 자료`로 원상복구됨
+
+
+### 10단계 복구 게이트 최종 재시험
+
+- B 시험 메모 제목을 변조한 뒤 `GET /api/restore/:id` 미리보기에서 HTTP 200, `verified: true`, `version`, `stateVersion`, `changedFields: ["title"]`, `planSha256` 확인
+- 확인된 `planSha256`을 `POST /api/restore/:id`에 전달하여 HTTP 200, `restored: true`, `verified: true` 확인
+- POST 실행 시 서버가 백업과 현재 상태를 다시 읽고 계획값을 재검증하며, DB 트랜잭션에서도 잠금 후 다시 검증하도록 구성
+- 새로고침 후 B 메모 제목이 `훈련 행정 자료`로 원상복구됨
