@@ -1,5 +1,17 @@
 # BYTE BACK 방어전 R9
 
+## 10단계 제작 3 — B 가상 메모 단건 복원
+
+- 서비스: `notes`
+- 복원 경로: `POST /api/restore`
+- 요청 본문: `{ "id": "<복원할 B 메모 UUID>" }`만 허용
+- 비공개 사본: Supabase `public.memo_restore_backups`에 B의 `훈련 행정 자료` 한 건만 저장하며 `PUBLIC`·`anon`·`authenticated` 직접 권한을 회수함
+- 사본은 `backup_key=b_training_admin` 한 칸으로 고정하고 `ON CONFLICT DO NOTHING`으로 재실행 시 덮어쓰지 않음
+- 복원 시 검증된 로그인 사용자와 사본의 `owner_id`를 대조하고, 사본의 내용 SHA-256을 다시 계산한 뒤 지정한 ID 한 건만 복원함
+- 복원과 감사 기록 추가는 DB 함수 안에서 한 트랜잭션으로 처리하며 다른 메모를 삭제·수정하지 않음
+- 감사 기록은 `memo_restore_audit`에 추가만 하며 기존 기록을 삭제하지 않음
+- SQL을 실제 실행하기 전에는 백업 생성·복원 성공으로 기록하지 않음
+
 이 저장소는 BYTE BACK 방어전 시작 틀을 기반으로 한 학습용 자료실입니다. 실제 학생 자료, 비밀번호, 토큰, 서버 전용 키는 Git에 넣지 않습니다.
 
 ## 현재 단계: 9단계 — 도플갱어를 찾고 권한을 거둡니다
