@@ -49,13 +49,21 @@ export async function decide(request) {
   }
 
   if (needsStepUp(context)) {
-    return {
-      schema: 'aleph.decision.v1',
-      requestId: request.requestId,
-      decision: 'step_up',
-      reasonCode: 'step_up_required',
-      ruleIds: [RULE_IDS[1]],
-    };
+    const stepUp = request?.stepUp;
+    const recentlyVerified = stepUp?.verified === true
+      && Number.isInteger(stepUp.authAgeSeconds)
+      && stepUp.authAgeSeconds >= 0
+      && stepUp.authAgeSeconds <= 900;
+
+    if (!recentlyVerified) {
+      return {
+        schema: 'aleph.decision.v1',
+        requestId: request.requestId,
+        decision: 'step_up',
+        reasonCode: 'step_up_required',
+        ruleIds: [RULE_IDS[1]],
+      };
+    }
   }
 
   return {
