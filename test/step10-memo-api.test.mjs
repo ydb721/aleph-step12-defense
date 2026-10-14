@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { resolve, dirname } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { TRUSTED_B_BACKUP as trusted } from '../src/recovery/trusted-memo-backup.mjs';
 
 // Authentication and the RPC transport are simulated here. The real API
@@ -15,14 +15,18 @@ const contentSha256 = sha(note.body);
 const snapshotSha256 = sha(note.title + '\0' + note.body);
 
 async function call({ route = 'api/restore/[id].js', id = trusted.id, body,
-  responses = [], authorized = true }) {
+  responses = [], authorized = true, method = 'POST' }) {
   const calls = [];
+  const logs = [];
   const context = createContext({
     process: { env: { SUPABASE_URL: 'https://fixture.supabase.co', SUPABASE_SECRET_KEY: 'test-only' } },
-    console: { error() {}, info() {} },
+    console: { error() {}, info(message) {
+      if (message.startsWith('BYTEBACK_TRACE ')) logs.push(JSON.parse(message.slice(15)));
+    } },
     URL,
     fetch: async (url, init) => {
-      calls.push({ name: new URL(url).pathname.split('/').at(-1), body: JSON.parse(init.body) });
+      calls.push({ name: new URL(url).pathname.split('/').at(-1), method: init.method,
+        body: init.body === undefined ? null : JSON.parse(init.body) });
       const response = responses.shift();
       assert.ok(response, 'unexpected RPC call');
       return { ok: response.status === undefined || response.status === 200,
@@ -38,8 +42,9 @@ async function call({ route = 'api/restore/[id].js', id = trusted.id, body,
         this.setExport('createRequire', () => () => ({}));
       }, { context });
     } else if (path === 'node:crypto') {
-      module = new SyntheticModule(['createHash'], function () {
+      module = new SyntheticModule(['createHash', 'randomUUID'], function () {
         this.setExport('createHash', createHash);
+        this.setExport('randomUUID', randomUUID);
       }, { context });
     } else if (path.endsWith('/src/verify-login.mjs')) {
       module = new SyntheticModule(['createLoginVerifier'], function () {
@@ -61,12 +66,14 @@ async function call({ route = 'api/restore/[id].js', id = trusted.id, body,
     setHeader(key, value) { result.headers[key] = value; },
     status(code) { result.status = code; return this; },
     json(value) { result.body = JSON.parse(JSON.stringify(value)); return result; },
+    end() { return result; },
   };
   await module.namespace.default({
-    method: 'POST', headers: { authorization: 'fixture', host: 'fixture.vercel.app' },
+    method, url: '/api/memos/' + id,
+    headers: { authorization: 'fixture', host: 'fixture.vercel.app' },
     query: { id }, body,
   }, res);
-  return { ...result, calls };
+  return { ...result, calls, logs };
 }
 const preview = (changes = ['title', 'content']) => ({
   id: trusted.id, version: trusted.version, capturedAt: trusted.capturedAt,
@@ -199,4 +206,72 @@ test('an initial snapshot with no valid seal or a different owner never restores
     assert.equal(result.status, 409);
     assert.equal(result.calls.length, 1);
   }
+});
+
+test('successful recovery logs each comparison under one trace without private values', async () => {
+  const p = preview();
+  const result = await call({ body: {}, responses: [{ body: p }, { body: restored(p) }] });
+  assert.equal(new Set(result.logs.map(item => item.traceId)).size, 1);
+  assert.equal(result.logs.filter(item => item.stage === 'completed').length, 1);
+  const comparison = result.logs.find(item => item.stage === 'restored_row_compared');
+  for (const flag of ['idMatches', 'ownerMatches', 'ownerAliasMatches', 'versionMatches',
+    'bodyHashMatches', 'snapshotHashMatches', 'hashAliasMatches', 'verified', 'restored']) {
+    assert.equal(comparison[flag], true, flag);
+  }
+  const serialized = JSON.stringify(result.logs);
+  for (const privateValue of [owner, trusted.id, note.title, note.body, contentSha256,
+    snapshotSha256, trusted.version]) assert.ok(!serialized.includes(privateValue));
+});
+
+test('failed hash comparison and early auth rejection always have final status logs', async () => {
+  const p = preview();
+  const mismatch = await call({ body: {},
+    responses: [{ body: p }, { body: { ...restored(p), body: note.body + ' changed' } }] });
+  assert.equal(mismatch.logs.find(item => item.stage === 'restored_row_compared').bodyHashMatches, false);
+  assert.equal(mismatch.logs.at(-1).status, 409);
+  assert.equal(mismatch.logs.at(-1).error, 'RESTORE_MISMATCH');
+  const denied = await call({ authorized: false, body: {} });
+  assert.equal(denied.logs.at(-1).status, 401);
+  assert.equal(denied.logs.at(-1).error, 'AUTH_REQUIRED');
+});
+
+test('compatibility route shares the same request trace with the canonical handler', async () => {
+  const p = preview();
+  const result = await call({ route: 'api/restore.js', body: { id: trusted.id },
+    responses: [{ body: p }, { body: restored(p) }] });
+  assert.equal(result.status, 200);
+  assert.equal(new Set(result.logs.map(item => item.traceId)).size, 1);
+  assert.equal(result.logs.filter(item => item.stage === 'received').length, 1);
+  assert.equal(result.logs.filter(item => item.stage === 'completed').length, 1);
+});
+
+test('memo create, read, update and delete retain their responses while recording outcomes', async () => {
+  const row = { public_id: trusted.id, owner_id: owner, title: note.title, content: note.body };
+  for (const method of ['POST', 'GET', 'PUT', 'DELETE']) {
+    const result = await call({ route: method === 'POST' ? 'api/memos.js' : 'api/memos/[id].js',
+      method, body: ['POST', 'PUT'].includes(method) ? note : undefined,
+      responses: [{ body: [row] }] });
+    assert.equal(result.status, method === 'POST' ? 201 : method === 'DELETE' ? 204 : 200);
+    if (method === 'POST') assert.deepEqual(result.body, { id: trusted.id });
+    if (['GET', 'PUT'].includes(method)) assert.deepEqual(result.body, { id: trusted.id, ...note });
+    assert.equal(result.logs.filter(item => item.stage === 'completed').length, 1);
+    assert.equal(result.logs.at(-1).status, result.status);
+    const serialized = JSON.stringify(result.logs);
+    for (const privateValue of [owner, trusted.id, note.title, note.body]) {
+      assert.ok(!serialized.includes(privateValue));
+    }
+  }
+});
+
+test('memo authentication and owner rejection still stop without exposing returned memo values', async () => {
+  const unauthenticated = await call({ route: 'api/memos/[id].js', method: 'GET', authorized: false });
+  assert.equal(unauthenticated.status, 401);
+  assert.equal(unauthenticated.calls.length, 0);
+  const wrongOwner = await call({ route: 'api/memos/[id].js', method: 'GET', responses: [{ body: [{
+    public_id: trusted.id, owner_id: '33333333-3333-4333-8333-333333333333',
+    title: note.title, content: note.body,
+  }] }] });
+  assert.equal(wrongOwner.status, 404);
+  assert.equal(wrongOwner.logs.at(-1).error, 'MEMO_NOT_FOUND');
+  assert.ok(!JSON.stringify(wrongOwner.logs).includes(note.body));
 });

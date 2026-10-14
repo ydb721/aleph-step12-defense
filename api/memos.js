@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createLoginVerifier } from '../src/verify-login.mjs';
+import { createRequestTrace } from '../src/request-trace.mjs';
 
 const require = createRequire(import.meta.url);
 const config = require('../aleph.config.json');
@@ -78,6 +79,8 @@ async function dbRequest(method, params, payload) {
 }
 
 export async function handleMemos(req, res, noteId = null) {
+  const trace = createRequestTrace(req, res, noteId === null ? 'memos_collection' : 'memos_item');
+  if (noteId !== null) trace.target(noteId);
   res.setHeader('Cache-Control', 'no-store');
 
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) {
@@ -109,6 +112,8 @@ export async function handleMemos(req, res, noteId = null) {
 
   // Only the token-verified identity determines ownership on every operation.
   const identity = await verifyLogin(authHeader);
+  trace.actor(identity);
+  trace('authentication', { authorized: Boolean(identity) });
   if (!identity) {
     return res.status(401).json({ error: 'AUTH_REQUIRED' });
   }
@@ -131,6 +136,7 @@ export async function handleMemos(req, res, noteId = null) {
         order: 'created_at.asc',
       });
       if (result.error) return res.status(result.status).json({ error: result.error });
+      trace('list_reread', { rowCount: result.data.length });
       if (result.data.some((note) => !ownedBy(note, identity.userId))) {
         return res.status(403).json({ error: 'OWNER_MISMATCH' });
       }
@@ -157,6 +163,8 @@ export async function handleMemos(req, res, noteId = null) {
       });
       if (result.error) return res.status(result.status).json({ error: result.error });
       if (result.data.length !== 1) return res.status(502).json({ error: 'CREATE_FAILED' });
+      trace.target(result.data[0].public_id);
+      trace('memo_created', { rowCount: result.data.length });
       return res.status(201).json({ id: result.data[0].public_id });
     }
 
@@ -169,6 +177,7 @@ export async function handleMemos(req, res, noteId = null) {
         limit: '1',
       });
       if (result.error) return res.status(result.status).json({ error: result.error });
+      trace('memo_reread', { rowCount: result.data.length });
       if (!result.data.length || !ownedBy(result.data[0], identity.userId)) {
         return res.status(404).json({ error: 'MEMO_NOT_FOUND' });
       }
@@ -188,6 +197,7 @@ export async function handleMemos(req, res, noteId = null) {
         select: 'public_id,title,content,owner_id',
       }, fields);
       if (result.error) return res.status(result.status).json({ error: result.error });
+      trace('memo_updated', { rowCount: result.data.length });
       if (!result.data.length) return res.status(404).json({ error: 'MEMO_NOT_FOUND' });
       if (result.data[0].owner_id !== identity.userId) {
         return res.status(403).json({ error: 'OWNER_MISMATCH' });
@@ -201,6 +211,7 @@ export async function handleMemos(req, res, noteId = null) {
         select: 'public_id,owner_id',
       });
       if (result.error) return res.status(result.status).json({ error: result.error });
+      trace('memo_deleted', { rowCount: result.data.length });
       if (!result.data.length || !ownedBy(result.data[0], identity.userId)) {
         return res.status(404).json({ error: 'MEMO_NOT_FOUND' });
       }

@@ -46,12 +46,23 @@ export function deploymentIdentity(env, config) {
     result.originalApiUrl = config.originalApiUrl;
   }
   if (step >= 10) {
+    let publicOrigin;
+    try { publicOrigin = new URL(config.publicAppUrl); } catch { /* rejected below */ }
+    if (typeof config.publicAppUrl !== 'string' || config.publicAppUrl !== config.publicAppUrl.trim()
+        || !publicOrigin || publicOrigin.protocol !== 'https:' || !HOST.test(publicOrigin.hostname)
+        || publicOrigin.username || publicOrigin.password || publicOrigin.port
+        || publicOrigin.pathname !== '/' || publicOrigin.search || publicOrigin.hash) {
+      throw new Error('10단계 공개 배포 주소는 로그인 발급 대상과 같은 HTTPS 원점이어야 합니다.');
+    }
     if (typeof config.restoreRoute !== 'string'
         || !/^\/api\/[A-Za-z0-9_:/-]+$/u.test(config.restoreRoute)
         || !config.allowedRoutes.includes('POST ' + config.restoreRoute)) {
       throw new Error('10단계부터 허용한 POST 복구 경로가 필요합니다.');
     }
     result.restoreRoute = config.restoreRoute;
+    // Individual production deployment URLs may require Vercel authentication.
+    // Recovery requests and the judge token audience use this registered public origin.
+    result.publicAppUrl = publicOrigin.origin;
   }
   return result;
 }

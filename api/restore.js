@@ -1,7 +1,9 @@
 import restoreById from './restore/[id].js';
+import { createRequestTrace, traceRequestShape } from '../src/request-trace.mjs';
 
 // Both entry points use the same authenticated recovery and pinned backup.
 export default async function handler(req, res) {
+  const trace = createRequestTrace(req, res, 'restore_compat');
   if (req.method !== 'POST') return restoreById(req, res);
   let body = req.body;
   if (typeof body === 'string') {
@@ -14,5 +16,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'INVALID_RESTORE_REQUEST' });
   }
   const { id, ...options } = body;
+  trace.target(id);
+  traceRequestShape(trace, body);
+  trace('route_delegated', { route: 'restore_by_id' });
   return restoreById({ ...req, query: { ...req.query, id }, body: options }, res);
 }

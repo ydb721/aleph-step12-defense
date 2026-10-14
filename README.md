@@ -19,7 +19,7 @@
 | 손상 사본 거부 | 기존 사본 고정 지문·신규 사본 해시/HMAC 재검증 | 내용과 저장 해시를 함께 바꾼 사본도 실제 DB에서 거부 확인 |
 | 기존 정상·금지 요청 | 아래 회귀시험 순서 | 로컬 관련 시험 통과. 최신 배포의 A/B 인증 회귀는 미실행 |
 | step·요청 계약·ruleIds | step=10 및 기존 판정 계약 | 변경 없음. 판정기 시험 통과 |
-| 신규 설치·제출 묶음 | npm install 및 npm run bundle | Vercel 설치·빌드 성공. 캐시 없는 신규 설치는 미확인. 작업 환경의 Git clone 차단으로 전체 bundle 미완료 |
+| 신규 설치·제출 묶음 | npm install 및 npm run bundle | Vercel 설치·빌드 성공. 사용자 PC에서 5e6a50c 제출 JSON 생성 확인. 작업 환경의 외부 요청 403 때문에 일부 자기점검·캐시 없는 설치는 미완료 |
 
 DB의 step10-created-memo-backups.sql 및 step10-verified-restore.sql 적용 완료. 구형 restore_memo_from_backup의 실행 권한 회수도 유지함.
 복구 API 격리 시험 15개, 배포 정보/기본 자기점검 3개, 관련 회귀시험 12개, 판정기 4개, 탐지 6개 통과. API 시험의 인증·RPC는 가상 응답임.
@@ -44,14 +44,31 @@ DB 시험: `supabase/step10-created-memo-test.sql` 및 기존 소유자 변조 �
 비공개 사본/키에는 PUBLIC·anon·authenticated·service_role 직접 접근을 허용하지 않음. 공개 RPC는 검증된 서버의 service_role만 실행함.
 
 로컬 재실행: `npm.cmd run recovery:test`.
-배포의 실제 B 로그인 흐름은 자동 실행하지 않았음. B로 로그인한 배포 화면에서 F12 → Console에 아래를 실행함. 비밀번호·키·토큰을 입력하지 않음.
+사용자가 5e6a50c 배포에서 B 로그인 후 아래 도구를 실행하여 passed/contentHashMatches=true를 확인함. 서버의 복원 200 응답 2회, DB 감사 2건과 사본 서명 일치도 대조함. 최신 로그 보완 배포의 동일 시험은 재실행 전까지 미실행임.
 
 ```js
 await (await import('/recovery-check.js')).runRecoveryCheck()
 ```
 
 정상 결과: `passed: true`, `contentHashMatches: true`. 비로그인 복원은 401이어야 함.
-이 도구는 만든 시험 메모 한 건만 정리하며 사본·감사 기록은 유지함. 최신 심판 결과는 미확인임.
+이 도구는 만든 시험 메모 한 건만 정리하며 사본·감사 기록은 유지함. 5e6a50c의 최신 심판 판정은 36점/S10_BACKUP_UNVERIFIED임. 실제 B 시험 성공을 심판 통과로 기록하지 않음.
+
+### 요청 흐름과 사본 비교 로그
+
+- Vercel 프로젝트의 Logs에서 `BYTEBACK_TRACE`를 검색함. 하나의 HTTP 요청은 traceId로, 같은 메모/사용자/심판 실행은 memoRef/actorRef/runRef로 연결함. 참조는 UUID의 단방향 요약이며 원래 ID는 로그에 넣지 않음.
+- 메모 생성·조회·수정·삭제와 두 복구 경로의 진입/인증/완료 HTTP 상태를 기록함. 잘못된 JSON·로그인 실패 등 조기 중단도 completed에 남음.
+- backup_compared는 사본 구조, 대상 ID, 요청자 소유권, 고정 지문 또는 DB 서명 검증 결과를 기록함.
+- restored_row_compared는 DB에서 다시 읽은 ID·소유자·본문 SHA-256·제목+본문 지문·사본 버전의 비교 결과를 true/false로 기록함. 실제 복구 조건은 변경하지 않음.
+- request_shape는 알려진 제어 필드의 존재와 필드 수만 기록함. 본문·제목·비밀번호·토큰·헤더 값·해시 원문은 기록하지 않음.
+- 응답 헤더 X-Byteback-Trace를 Network 탭에서 복사하면 그 요청의 로그를 찾을 수 있음.
+- trace 없는 요청은 플랫폼 단계에서 차단됐거나 수집 범위 밖일 수 있으므로, 로그 부재를 성공/실패 근거로 삼지 않음.
+
+### 공개 주소 대조와 9단계 기준
+
+- 9단계 검증 커밋은 847972a71c0f469c330f58b67ea1dbc3893cfec3임. 로그 수정 전 판정기·탐지기·로그인 검증·자원 ID·메모/공지 API·Vercel 설정 7개 파일의 Git 지문이 해당 사본과 같았음.
+- 5e6a50c의 /aleph.json은 publicAppUrl에 개별 배포 URL을 내보냈고, 이 주소의 /aleph.json 및 /api/memos는 외부 확인에서 login_required였음. 등록한 pink.vercel.app 공개 주소의 /aleph.json은 읽혔음.
+- 10단계부터 배포 메타데이터 publicAppUrl은 aleph.config.json의 검증된 공개 HTTPS 원점을 사용함. 심판 토큰의 audience에 사용한 호스트와도 같은 주소임. Vercel 보호 설정과 인증 검증은 유지함.
+- 이 주소 불일치가 심판 실패를 일으켰는지는 새 로그와 재판정으로 확인해야 함. 이번 변경을 심판 통과로 기록하지 않음.
 
 
 ## 10단계 제작 4 — 복구 뒤 1~9단계 회귀시험
