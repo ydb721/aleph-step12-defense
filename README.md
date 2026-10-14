@@ -357,9 +357,16 @@ Vercel은 `vercel.json`의 `npm run build`를 실행하고 `public`을 배포합
 - 새로고침 후 B 메모 제목이 `훈련 행정 자료`로 원상복구됨
 
 
-### 10단계 복구 게이트 최종 재시험
+### 10단계 복구 검증 보완 (2026-10-14)
 
-- B 시험 메모 제목을 변조한 뒤 `GET /api/restore/:id` 미리보기에서 HTTP 200, `verified: true`, `version`, `stateVersion`, `changedFields: ["title"]`, `planSha256` 확인
-- 확인된 `planSha256`을 `POST /api/restore/:id`에 전달하여 HTTP 200, `restored: true`, `verified: true` 확인
-- POST 실행 시 서버가 백업과 현재 상태를 다시 읽고 계획값을 재검증하며, DB 트랜잭션에서도 잠금 후 다시 검증하도록 구성
-- 새로고침 후 B 메모 제목이 `훈련 행정 자료`로 원상복구됨
+- POST /api/restore/:id가 제출용 복구 경로임. {preview:true}는 읽기 전용 미리보기이며 백업 version, 현재 stateVersion, changedFields를 반환함.
+- POST /api/restore는 본문의 id를 같은 처리기로 전달함. 두 경로 모두 Git에 고정한 백업 ID·버전·시각을 확인함.
+- 복원 실행은 백업을 다시 조회하고, DB 잠금 후 재검증하며, 복원 내용 해시를 확인한 뒤 감사 기록을 추가함.
+- 미리보기의 version/stateVersion은 expectedVersion/expectedState로 전달 가능함. 현재 호환 인터페이스는 두 값 생략 시 서버에서 실행 직전 조회한 버전을 사용함.
+- 잘못된 JSON·null JSON은 400으로 거부함. DB 문법 오류는 백업 무결성 거부와 구분함. 인증 신원 진단 로그는 제거함.
+- SQL 해시 구분자는 decode('00','hex')로 명시함. 변경 항목은 jsonb_build_array로 생성함.
+- 구형 restore_memo_from_backup RPC의 실행 권한을 폐기함. 기존 DB에는 step10-verified-restore.sql을 적용해야 함.
+- API 격리 시험: npm.cmd run recovery:test → 9개 통과. 인증과 RPC는 가상 응답으로 대체한 시험이며 실제 배포/심판 시험과 구분함.
+- 실제 DB 시험: B 메모 제목·본문 임시 변조 후 검증 복원 성공. 손상 백업 복원 거부 및 메모·감사 이력 보존 확인. 시험 변경은 트랜잭션 롤백함.
+- 심판 결과: DB JSON 보완 후에도 48점/S10_BACKUP_UNVERIFIED 지속. 이번 API 보완의 심판 결과는 미확인임.
+- 실행하지 않은 실제 배포 API 인증 시험, 전체 심판 공격, 저장소 신규 npm install 시험은 통과로 기록하지 않음.

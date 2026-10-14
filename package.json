@@ -13,7 +13,8 @@
     "xdr:run": "node scripts/xdr-run.mjs",
     "policy:diff": "node scripts/policy-diff.mjs",
     "policy:restore": "node scripts/policy-restore.mjs",
-    "policy:test": "node --test test/step10-policy-recovery.test.mjs"
+    "policy:test": "node --test test/step10-policy-recovery.test.mjs",
+    "recovery:test": "node --experimental-vm-modules --test test/step10-memo-api.test.mjs"
   },
   "engines": {
     "node": ">=22"

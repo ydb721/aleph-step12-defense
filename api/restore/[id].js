@@ -37,7 +37,7 @@ function authHeader(req) {
 
 function readBody(req) {
   if (typeof req.body === 'string') {
-    try { return JSON.parse(req.body); } catch { return null; }
+    try { return JSON.parse(req.body) ?? false; } catch { return false; }
   }
   return req.body ?? null;
 }
@@ -66,6 +66,14 @@ async function rpc(name, body) {
     const code = typeof data?.code === 'string' ? data.code : '';
     if (code === '42883' || code === 'PGRST202') {
       return { status: 503, body: { error: 'RESTORE_NOT_READY' } };
+    }
+    const message = typeof data?.message === 'string' ? data.message : '';
+    if (message === 'backup_or_target_changed') {
+      return { status: 409, body: { error: 'RECOVERY_STATE_CHANGED' } };
+    }
+    if (code !== 'P0001') {
+      console.error('RESTORE_RPC_FAILED', { rpc: name, code });
+      return { status: 502, body: { error: 'RESTORE_DEPENDENCY_ERROR' } };
     }
     return { status: 409, body: { error: 'BACKUP_UNVERIFIED' } };
   }
@@ -177,10 +185,6 @@ export default async function handler(req, res) {
   catch { return res.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' }); }
 
   const identity = await verifyLogin(authHeader(req));
-  console.info('RESTORE_AUTH_CHECK', {
-    kind: identity?.kind ?? 'invalid',
-    judgeIdentity: identity?.kind === 'judge' ? identity.identity : null
-  });
   if (!identity) return res.status(401).json({ error: 'AUTH_REQUIRED' });
 
   const body = readBody(req);
@@ -213,3 +217,4 @@ export default async function handler(req, res) {
     return res.status(502).json({ error: 'UPSTREAM_REQUEST_FAILED' });
   }
 }
+
