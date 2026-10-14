@@ -31,7 +31,7 @@ begin
   actual_backup_hash := encode(
     extensions.digest(
       convert_to(b.title, 'UTF8')
-      || '\x00'::bytea
+      || decode('00', 'hex')
       || convert_to(coalesce(b.content, ''), 'UTF8'),
       'sha256'
     ),
@@ -61,7 +61,7 @@ begin
   where public_id = p_public_id;
 
   if not found then
-    changes := '["create"]'::jsonb;
+    changes := jsonb_build_array('create');
     state_version := encode(
       extensions.digest(convert_to('missing:' || p_public_id::text, 'UTF8'), 'sha256'),
       'hex'
@@ -72,10 +72,10 @@ begin
     end if;
 
     if m.title is distinct from b.title then
-      changes := changes || '"title"'::jsonb;
+      changes := changes || jsonb_build_array('title');
     end if;
     if coalesce(m.content, '') is distinct from coalesce(b.content, '') then
-      changes := changes || '"content"'::jsonb;
+      changes := changes || jsonb_build_array('content');
     end if;
 
     state_version := encode(
@@ -166,7 +166,7 @@ begin
   select encode(
     extensions.digest(
       convert_to(title, 'UTF8')
-      || '\x00'::bytea
+      || decode('00', 'hex')
       || convert_to(coalesce(content, ''), 'UTF8'),
       'sha256'
     ),
@@ -209,3 +209,12 @@ grant execute on function public.restore_verified_memo(uuid, uuid, text, text)
 to service_role;
 
 notify pgrst, 'reload schema';
+
+
+-- Retire the obsolete RPC so it cannot bypass verified recovery.
+do $retire$
+begin
+  if to_regprocedure('public.restore_memo_from_backup(uuid,uuid)') is not null then
+    execute 'revoke all on function public.restore_memo_from_backup(uuid,uuid) from public, anon, authenticated, service_role';
+  end if;
+end $retire$;

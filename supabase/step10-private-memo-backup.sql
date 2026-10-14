@@ -68,7 +68,7 @@ begin
     owner_id,
     title,
     coalesce(content, ''),
-    encode(extensions.digest(convert_to(title, 'UTF8') || '\\x00'::bytea || convert_to(coalesce(content, ''), 'UTF8'), 'sha256'), 'hex'),
+    encode(extensions.digest(convert_to(title, 'UTF8') || decode('00', 'hex') || convert_to(coalesce(content, ''), 'UTF8'), 'sha256'), 'hex'),
     '847972a71c0f469c330f58b67ea1dbc3893cfec3'
   from public.memos
   where owner_id = b_user
@@ -76,81 +76,14 @@ begin
   on conflict (backup_key) do nothing;
 end $$;
 
-create or replace function public.restore_memo_from_backup(
-  p_actor uuid,
-  p_public_id uuid
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, extensions, pg_temp
-as $$
-declare
-  b public.memo_restore_backups%rowtype;
-  restored_hash text;
+-- Legacy two-argument recovery is retired: it does not bind a preview version.
+-- Apply step10-verified-restore.sql and use restore_verified_memo instead.
+do $retire$
 begin
-  select *
-  into b
-  from public.memo_restore_backups
-  where public_id = p_public_id;
-
-  if not found then
-    raise exception using errcode = 'P0001', message = 'backup_not_found';
+  if to_regprocedure('public.restore_memo_from_backup(uuid,uuid)') is not null then
+    execute 'revoke all on function public.restore_memo_from_backup(uuid,uuid) from public, anon, authenticated, service_role';
   end if;
-
-  if b.owner_id <> p_actor then
-    raise exception using errcode = 'P0001', message = 'backup_owner_mismatch';
-  end if;
-
-  if encode(extensions.digest(convert_to(b.title, 'UTF8') || '\\x00'::bytea || convert_to(coalesce(b.content, ''), 'UTF8'), 'sha256'), 'hex') <> b.content_sha256 then
-    raise exception using errcode = 'P0001', message = 'backup_hash_mismatch';
-  end if;
-
-  update public.memos
-  set owner_id = b.owner_id,
-      title = b.title,
-      content = b.content
-  where public_id = b.public_id;
-
-  if not found then
-    insert into public.memos (public_id, owner_id, title, content)
-    values (b.public_id, b.owner_id, b.title, b.content);
-  end if;
-
-  select encode(extensions.digest(convert_to(title, 'UTF8') || '\\x00'::bytea || convert_to(coalesce(content, ''), 'UTF8'), 'sha256'), 'hex')
-  into restored_hash
-  from public.memos
-  where public_id = b.public_id
-    and owner_id = b.owner_id;
-
-  if restored_hash is distinct from b.content_sha256 then
-    raise exception using errcode = 'P0001', message = 'restore_verify_failed';
-  end if;
-
-  insert into public.memo_restore_audit (
-    actor_id,
-    memo_public_id,
-    backup_sha256,
-    action
-  )
-  values (
-    p_actor,
-    b.public_id,
-    b.content_sha256,
-    'memo_restore'
-  );
-
-  return jsonb_build_object(
-    'restored', true,
-    'id', b.public_id,
-    'ownerMatches', true,
-    'contentHashMatches', true
-  );
-end;
-$$;
-
-revoke all on function public.restore_memo_from_backup(uuid, uuid) from public, anon, authenticated;
-grant execute on function public.restore_memo_from_backup(uuid, uuid) to service_role;
+end $retire$;
 
 -- 확인용: 본문은 출력하지 않습니다.
 select
@@ -161,3 +94,4 @@ select
   source_commit,
   backed_up_at
 from public.memo_restore_backups;
+
