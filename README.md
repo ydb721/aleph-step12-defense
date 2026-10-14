@@ -41,6 +41,18 @@ DB의 step10-created-memo-backups.sql 및 step10-verified-restore.sql 적용 완
 | A의 B 사본 접근 | A 로그인 상태에서 B 기존 메모 ID의 `복원할 항목 확인` 실행 시 `BACKUP_UNVERIFIED` 표시, 복원 실행 버튼 없음 | 타 소유자 백업 미리보기 거부; 심판 오류 `S10_BACKUP_UNVERIFIED`의 원인과 동일하다고 판단하지 않음 |
 | 로그아웃 후 UI/API | 로그아웃·새로고침 후 메모 목록과 복원 영역이 숨겨짐. 별도 탭에서 `/api/memos` 요청 시 `{"error":"AUTH_REQUIRED"}` 출력 | JSON 거부 확인. **HTTP 401 상태코드는 개발자 도구로 별도 확인하지 않음** |
 
+### 2026-10-14 Vercel 운영 로그 재검증 (기존 배포 `39aefcb`)
+
+화면 시험에 사용한 실제 복원 요청의 `BYTEBACK_TRACE`를 Vercel Production 로그에서 확인함. 토큰·비밀번호·본문·해시 원문은 기록하지 않음.
+
+- 복원 요청: `POST /api/restore/c93789a8-33fa-4bd2-9259-adbc25eedbc4`
+- 로그 시각: `2026-10-14T08:33:59Z` (KST 17:33:59); 요청 추적 ID: `8351c2f5-e7dd-4881-9633-0741becb138b`.
+- `request_shape`: `hasExpectedVersion=true`, `hasExpectedState=true`. `backup_compared`: `structureValid=true`, `idMatches=true`, `ownerMatches=true`, `trusted=true`, `sealed=true`, `backupKind=on_create`, `changedFields=["title","content"]`.
+- `confirmation_compared`: `versionMatches=true`, `stateMatches=true`. 복원 RPC HTTP 200.
+- `restored_row_compared`: `idMatches=true`, `ownerMatches=true`, `ownerAliasMatches=true`, `versionMatches=true`, `hashAliasMatches=true`, `bodyHashMatches=true`, `snapshotHashMatches=true`, `verified=true`, `restored=true`.
+- `completed`: HTTP `200`, `verified=true`, `restored=true`. 위의 값은 **서버 측 실제 비교 결과**이며 HTTP 응답 JSON에 포함된 원시 소유자·해시값 자체를 캡처한 것은 아님.
+- 비로그인 `GET /api/memos`: `2026-10-14T08:40:33Z`(KST 17:40:33), 추적 ID `de55570b-12f1-4e51-abb9-67f3935f5226`, `completed.status=401`, `error=AUTH_REQUIRED`. 화면에 표시된 JSON 거부와 서버 상태 코드를 대조함.
+
 이번 수동 재시험에서 **검증하지 않은 항목**: 복원 요청의 실제 HTTP 응답에 들어 있는 `ownerId`/`contentSha256` 값과 원본 해시의 직접 비교, 실제 손상 사본 주입/거부, 삭제 후 복원, 모든 1~9단계 공격의 최신 배포 재실행, 심판 100점 판정. 이 항목은 코드 또는 과거 시험 근거와 구별하여 미확인 상태로 유지함.
 
 ### 이번 수정 위치와 직접 확인
