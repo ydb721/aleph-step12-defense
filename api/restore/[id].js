@@ -1,4 +1,4 @@
-import { isTrustedMemoBackupPreview } from '../../src/recovery/trusted-memo-backup.mjs';
+import { isTrustedMemoBackupPreview, TRUSTED_B_BACKUP } from '../../src/recovery/trusted-memo-backup.mjs';
 import { createRequire } from 'node:module';
 import { createLoginVerifier } from '../../src/verify-login.mjs';
 
@@ -10,6 +10,11 @@ const SHA = /^[0-9a-f]{64}$/u;
 const CHANGED = new Set(['title', 'content', 'create']);
 
 let verifier;
+
+function trace(stage, detail = {}) {
+  console.info('RESTORE_TRACE', { stage, ...detail });
+}
+
 
 function getVerifier() {
   if (!verifier) {
@@ -68,6 +73,9 @@ async function rpc(name, body) {
       return { status: 503, body: { error: 'RESTORE_NOT_READY' } };
     }
     const message = typeof data?.message === 'string' ? data.message : '';
+    const known = new Set(['backup_not_found', 'backup_hash_mismatch', 'owner_mismatch',
+      'expected_versions_required', 'backup_or_target_changed', 'restore_verify_failed']);
+    trace('rpc_rejected', { rpc: name, code, reason: known.has(message) ? message : 'other' });
     if (message === 'backup_or_target_changed') {
       return { status: 409, body: { error: 'RECOVERY_STATE_CHANGED' } };
     }
@@ -103,9 +111,16 @@ async function previewRestore(actorId, memoId) {
     !validPreview(result.body, memoId) ||
     !isTrustedMemoBackupPreview(result.body)
   ) {
+    trace('backup_rejected', {
+      structureValid: Boolean(validPreview(result.body, memoId)),
+      idMatches: result.body?.id === TRUSTED_B_BACKUP.id,
+      versionMatches: result.body?.version === TRUSTED_B_BACKUP.version,
+      captureMatches: result.body?.capturedAt === TRUSTED_B_BACKUP.capturedAt,
+    });
     return { status: 409, body: { error: 'BACKUP_UNVERIFIED' } };
   }
 
+  trace('backup_verified');
   return {
     status: 200,
     body: {
@@ -141,7 +156,9 @@ async function restoreMemo(actorId, memoId, expectedVersion, expectedState) {
   });
 
   if (restored.status !== 200) return restored;
-  if (!restored.body || restored.body.id !== memoId || restored.body.verified !== true) {
+  if (!restored.body || restored.body.id !== memoId || restored.body.verified !== true
+      || restored.body.restored !== true) {
+    trace('restore_result_rejected');
     return { status: 409, body: { error: 'RESTORE_MISMATCH' } };
   }
 
@@ -156,6 +173,7 @@ async function restoreMemo(actorId, memoId, expectedVersion, expectedState) {
 }
 
 export default async function handler(req, res) {
+  trace('received', { post: req.method === 'POST' });
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('CDN-Cache-Control', 'no-store');
   res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
@@ -185,6 +203,8 @@ export default async function handler(req, res) {
   catch { return res.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' }); }
 
   const identity = await verifyLogin(authHeader(req));
+  trace('authentication', { kind: identity?.kind === 'judge' ? 'judge'
+    : identity?.kind === 'student' ? 'student' : 'invalid' });
   if (!identity) return res.status(401).json({ error: 'AUTH_REQUIRED' });
 
   const body = readBody(req);
@@ -206,14 +226,18 @@ export default async function handler(req, res) {
       return res.status(preview.status).json(preview.body);
     }
 
+    trace('restore_requested', { suppliedVersion: body?.expectedVersion !== undefined,
+      suppliedState: body?.expectedState !== undefined });
     const result = await restoreMemo(
       identity.userId,
       memoId,
       body?.expectedVersion,
       body?.expectedState,
     );
+    trace('finished', { status: result.status, restored: result.body?.restored === true });
     return res.status(result.status).json(result.body);
   } catch {
+    trace('dependency_failed');
     return res.status(502).json({ error: 'UPSTREAM_REQUEST_FAILED' });
   }
 }

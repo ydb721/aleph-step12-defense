@@ -11,7 +11,7 @@ async function call({ route = 'api/restore/[id].js', body, responses = [], autho
   const calls = [];
   const context = createContext({
     process: { env: { SUPABASE_URL: 'https://fixture.supabase.co', SUPABASE_SECRET_KEY: 'test-only' } },
-    console: { error() {} },
+    console: { error() {}, info() {} },
     URL,
     fetch: async (url, init) => {
       calls.push({ name: new URL(url).pathname.split('/').at(-1), body: JSON.parse(init.body) });
@@ -117,4 +117,10 @@ test('RPC programming errors are distinguished from backup rejection', async () 
   const result = await call({ body: {}, responses: [{ status: 400, body: { code: '22P02' } }] });
   assert.equal(result.status, 502);
   assert.equal(result.body.error, 'RESTORE_DEPENDENCY_ERROR');
+});
+test('a verified RPC response that did not restore cannot be reported as restored', async () => {
+  const result = await call({ body: {}, responses: [{ body: preview() },
+    { body: { id: trusted.id, verified: true, restored: false } }] });
+  assert.notEqual(result.status, 200);
+  assert.notEqual(result.body.restored, true);
 });
