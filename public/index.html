@@ -37,7 +37,7 @@
 </head>
 <body>
   <main>
-    <div class="eyebrow">BYTE BACK · 5단계 — 서버 전용 자료 요청</div>
+    <div class="eyebrow">BYTE BACK · 10단계 — 검증한 사본에서 복원</div>
     <h1>보호된 자료실</h1>
     <p>서버 인증 경유로 이메일·비밀번호 로그인을 할 수 있습니다.</p>
 
@@ -68,6 +68,19 @@
       <button id="memo-add" type="submit">메모 추가</button>
       <p id="memo-feedback" aria-live="polite"></p>
     </form>
+    <section id="recovery-panel" class="memo-editor" hidden aria-labelledby="recovery-heading">
+      <h2 id="recovery-heading">가상 메모 한 건 복원</h2>
+      <p>백업이 있는 시험 메모의 ID를 입력하고 변경 항목을 확인하세요.</p>
+      <form id="recovery-preview-form">
+        <label>복원할 메모 ID<input id="recovery-id" required autocomplete="off"></label>
+        <button id="recovery-preview" type="submit">복원할 항목 확인</button>
+      </form>
+      <div id="recovery-confirmation" hidden>
+        <p id="recovery-details"></p>
+        <button id="recovery-apply" type="button">확인한 한 건 복원</button>
+      </div>
+      <p id="recovery-feedback" aria-live="polite"></p>
+    </section>
     <ul id="notes" aria-live="polite"><li>메모를 보려면 로그인하세요.</li></ul>
   </main>
 
@@ -103,6 +116,74 @@
       if (!response.ok) throw new Error(data?.error || '요청 실패 (' + response.status + ')');
       return data;
     };
+    let recoveryPlan = null;
+    let recoveryGeneration = 0;
+    const recoveryPanel = document.querySelector('#recovery-panel');
+    const recoveryId = document.querySelector('#recovery-id');
+    const recoveryConfirmation = document.querySelector('#recovery-confirmation');
+    const recoveryDetails = document.querySelector('#recovery-details');
+    const recoveryFeedback = document.querySelector('#recovery-feedback');
+    const recoveryPreview = document.querySelector('#recovery-preview');
+    const recoveryApply = document.querySelector('#recovery-apply');
+    const resetRecovery = () => {
+      ++recoveryGeneration;
+      recoveryPlan = null;
+      recoveryConfirmation.hidden = true;
+      recoveryDetails.textContent = '';
+      recoveryFeedback.textContent = '';
+    };
+    recoveryId.addEventListener('input', resetRecovery);
+    document.querySelector('#recovery-preview-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      resetRecovery();
+      const generation = recoveryGeneration;
+      const id = recoveryId.value.trim().toLowerCase();
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(id)) {
+        recoveryFeedback.textContent = '메모 ID 형식이 올바르지 않습니다.';
+        return;
+      }
+      recoveryPreview.disabled = true;
+      try {
+        const plan = await memoRequest('POST', '/api/restore/' + encodeURIComponent(id), { preview: true });
+        if (generation !== recoveryGeneration || !currentSession) return;
+        if (plan?.id !== id || plan.verified !== true
+            || !/^[0-9a-f]{64}$/u.test(plan.version ?? '')
+            || !/^[0-9a-f]{64}$/u.test(plan.stateVersion ?? '')
+            || !Array.isArray(plan.changedFields)) throw new Error('복원 사본 검증 실패');
+        recoveryPlan = { id, version: plan.version, stateVersion: plan.stateVersion };
+        const labels = { title: '제목', content: '내용', create: '삭제된 메모 다시 생성' };
+        recoveryDetails.textContent = '대상: ' + id + ' · 백업 버전: ' + plan.version
+          + ' · 백업 시각: ' + plan.capturedAt + ' · 변경 항목: '
+          + (plan.changedFields.map(field => labels[field] ?? field).join(', ') || '없음');
+        recoveryConfirmation.hidden = false;
+      } catch (error) {
+        if (generation === recoveryGeneration) recoveryFeedback.textContent = error.message;
+      } finally { recoveryPreview.disabled = false; }
+    });
+    recoveryApply.addEventListener('click', async () => {
+      const plan = recoveryPlan;
+      if (!plan || !currentSession) return;
+      const generation = recoveryGeneration;
+      recoveryApply.disabled = true;
+      recoveryPreview.disabled = true;
+      try {
+        const result = await memoRequest('POST', '/api/restore/' + encodeURIComponent(plan.id), {
+          expectedVersion: plan.version, expectedState: plan.stateVersion,
+        });
+        if (generation !== recoveryGeneration || !currentSession) return;
+        if (result?.id !== plan.id || result.restored !== true || result.verified !== true) {
+          throw new Error('복원 결과를 확인할 수 없습니다.');
+        }
+        resetRecovery();
+        recoveryFeedback.textContent = '검증한 사본으로 한 건 복원 완료';
+        void loadMemos(currentSession, ++notesGeneration);
+      } catch (error) {
+        if (generation === recoveryGeneration) {
+          resetRecovery();
+          recoveryFeedback.textContent = error.message + ' · 변경 항목을 다시 확인하세요.';
+        }
+      } finally { recoveryApply.disabled = false; recoveryPreview.disabled = false; }
+    });
     let notesGeneration = 0;
 
     const showNotesMessage = (message) => {
@@ -168,7 +249,16 @@
               if (currentSession) void loadMemos(currentSession, ++notesGeneration);
             } catch (error) { memoFeedback.textContent = error.message; }
           });
-          actions.append(edit, remove);
+          const restore = document.createElement('button');
+          restore.type = 'button';
+          restore.textContent = '복원 항목 확인';
+          restore.addEventListener('click', () => {
+            resetRecovery();
+            recoveryId.value = note.id;
+            recoveryPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            document.querySelector('#recovery-preview-form').requestSubmit();
+          });
+          actions.append(edit, restore, remove);
           item.append(actions);
           return item;
         }));
@@ -201,6 +291,9 @@
       const generation = ++notesGeneration;
       currentSession = signedIn ? session : null;
       editor.hidden = !signedIn;
+      recoveryPanel.hidden = !signedIn;
+      resetRecovery();
+      if (!signedIn) recoveryId.value = '';
       if (!signedIn) {
         editor.reset();
         memoFeedback.textContent = '';

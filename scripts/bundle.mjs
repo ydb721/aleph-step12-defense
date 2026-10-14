@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { changedFilesForCommit } from './bundle-changes.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const git = (...args) => execFileSync('git', ['-C', root, ...args], {
@@ -36,8 +37,7 @@ try {
     if (error.message?.startsWith('origin 주소가') || error.message?.startsWith('GitHub HTTPS')) throw error;
     fail('GitHub HTTPS 저장소 주소를 origin으로 등록해 주세요.');
   }
-  const changedFiles = git('diff-tree', '--root', '--no-commit-id', '--name-only', '--no-renames', '-r', commit)
-    .split(/\r?\n/u).filter(Boolean).sort();
+  const changedFiles = changedFilesForCommit(git, commit);
   if (!changedFiles.length) fail('마지막 커밋에 바뀐 파일이 없습니다.');
   const config = fromCommit('aleph.config.json');
   if (normalizedRepo(config.repoUrl) !== repoUrl) {
