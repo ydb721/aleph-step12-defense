@@ -1,5 +1,6 @@
 import { isTrustedMemoBackupPreview, TRUSTED_B_BACKUP } from '../../src/recovery/trusted-memo-backup.mjs';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { createLoginVerifier } from '../../src/verify-login.mjs';
 
 const require = createRequire(import.meta.url);
@@ -73,7 +74,7 @@ async function rpc(name, body) {
       return { status: 503, body: { error: 'RESTORE_NOT_READY' } };
     }
     const message = typeof data?.message === 'string' ? data.message : '';
-    const known = new Set(['backup_not_found', 'backup_hash_mismatch', 'owner_mismatch',
+    const known = new Set(['backup_not_found', 'backup_hash_mismatch', 'backup_seal_mismatch', 'owner_mismatch',
       'expected_versions_required', 'backup_or_target_changed', 'restore_verify_failed']);
     trace('rpc_rejected', { rpc: name, code, reason: known.has(message) ? message : 'other' });
     if (message === 'backup_or_target_changed') {
@@ -95,6 +96,9 @@ function validPreview(value, memoId) {
     && value.verified === true
     && SHA.test(value.version ?? '')
     && SHA.test(value.stateVersion ?? '')
+    && UUID.test(value.ownerId ?? '')
+    && SHA.test(value.contentSha256 ?? '')
+    && SHA.test(value.snapshotSha256 ?? '')
     && typeof value.capturedAt === 'string'
     && Array.isArray(value.changedFields)
     && value.changedFields.every((field) => CHANGED.has(field));
@@ -109,6 +113,7 @@ async function previewRestore(actorId, memoId) {
   if (result.status !== 200) return result;
   if (
     !validPreview(result.body, memoId) ||
+    result.body.ownerId.toLowerCase() !== actorId.toLowerCase() ||
     !isTrustedMemoBackupPreview(result.body)
   ) {
     trace('backup_rejected', {
@@ -120,7 +125,7 @@ async function previewRestore(actorId, memoId) {
     return { status: 409, body: { error: 'BACKUP_UNVERIFIED' } };
   }
 
-  trace('backup_verified');
+  trace('backup_verified', { kind: result.body.backupKind });
   return {
     status: 200,
     body: {
@@ -130,6 +135,11 @@ async function previewRestore(actorId, memoId) {
       stateVersion: result.body.stateVersion,
       capturedAt: result.body.capturedAt,
       changedFields: result.body.changedFields,
+      ownerId: result.body.ownerId,
+      contentSha256: result.body.contentSha256,
+      snapshotSha256: result.body.snapshotSha256,
+      backupKind: result.body.backupKind,
+      sealVerified: result.body.sealVerified,
     },
   };
 }
@@ -156,8 +166,17 @@ async function restoreMemo(actorId, memoId, expectedVersion, expectedState) {
   });
 
   if (restored.status !== 200) return restored;
-  if (!restored.body || restored.body.id !== memoId || restored.body.verified !== true
-      || restored.body.restored !== true) {
+  const memo = restored.body;
+  const hash = value => createHash('sha256').update(value, 'utf8').digest('hex');
+  if (!memo || memo.id !== memoId || memo.verified !== true || memo.restored !== true
+      || memo.ownerId !== preview.body.ownerId || memo.owner_id !== memo.ownerId
+      || typeof memo.title !== 'string' || typeof memo.body !== 'string'
+      || memo.backupVersion !== preview.body.version
+      || memo.contentSha256 !== preview.body.contentSha256
+      || memo.content_sha256 !== memo.contentSha256
+      || memo.contentSha256 !== hash(memo.body)
+      || memo.snapshotSha256 !== preview.body.snapshotSha256
+      || memo.snapshotSha256 !== hash(memo.title + '\0' + memo.body)) {
     trace('restore_result_rejected');
     return { status: 409, body: { error: 'RESTORE_MISMATCH' } };
   }
@@ -165,7 +184,15 @@ async function restoreMemo(actorId, memoId, expectedVersion, expectedState) {
   return {
     status: 200,
     body: {
-      id: memoId,
+      id: memo.id,
+      title: memo.title,
+      body: memo.body,
+      ownerId: memo.ownerId,
+      owner_id: memo.owner_id,
+      contentSha256: memo.contentSha256,
+      content_sha256: memo.content_sha256,
+      snapshotSha256: memo.snapshotSha256,
+      backupVersion: memo.backupVersion,
       verified: true,
       restored: true,
     },

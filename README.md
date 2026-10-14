@@ -2,10 +2,10 @@
 
 ## 현재 10단계 복구 흐름
 
-1. 비공개 B 시험 메모 백업의 ID·소유자·내용 해시를 재검증함.
+1. 기존 B 사본의 고정 지문을 보존함. 신규 메모는 생성 트랜잭션에서 비공개 최초 사본을 저장하고 복원 때 해시·서명을 재검증함.
 2. 로그인 후 메모의 '복원 항목 확인'에서 백업 버전·시각·변경 항목을 확인함.
 3. '확인한 한 건 복원'은 미리보기 version/stateVersion을 전달하며, 서버와 DB 잠금 안에서 다시 대조함.
-4. 다른 메모는 보존하고 복원 후 해시를 확인한 뒤 감사 기록을 추가함. 시험 정책 복구는 실제 운영 정책을 변경하지 않음.
+4. 복원 후 DB 행을 다시 읽어 ID·소유자·제목·본문 해시를 대조하고 실제 값을 응답함. 다른 메모와 기존 감사 기록을 보존함.
 5. 기존 인증·소유권 검사·기기/추가확인·자원 판정·대량 조회 탐지는 유지함.
 
 ### 조건 재대조와 최신 검증
@@ -16,15 +16,42 @@
 | 실행 전 버전·변경 범위 확인 | 로그인 화면의 복원 미리보기·확인 버튼 | 구현 및 JS 문법 확인. 로그인한 실제 브라우저 시험은 미실행 |
 | B 메모 한 건 복원 | POST /api/restore/:id · 잠금 후 사본/대상 재조회 | 실제 DB 제목·본문 변조 복원 및 삭제 복원 통과. 시험 변경 롤백 |
 | 다른 자료·감사 이력 보존 | 다른 메모 전체 지문 유지·감사 추가 | 실제 DB 롤백 시험 통과 |
-| 손상 사본 거부 | 백업 해시 재계산·API 고정 지문 비교 | DB 손상 사본 거부 시험 및 API 격리 시험 통과 |
+| 손상 사본 거부 | 기존 사본 고정 지문·신규 사본 해시/HMAC 재검증 | 내용과 저장 해시를 함께 바꾼 사본도 실제 DB에서 거부 확인 |
 | 기존 정상·금지 요청 | 아래 회귀시험 순서 | 로컬 관련 시험 통과. 최신 배포의 A/B 인증 회귀는 미실행 |
 | step·요청 계약·ruleIds | step=10 및 기존 판정 계약 | 변경 없음. 판정기 시험 통과 |
 | 신규 설치·제출 묶음 | npm install 및 npm run bundle | Vercel 설치·빌드 성공. 캐시 없는 신규 설치는 미확인. 작업 환경의 Git clone 차단으로 전체 bundle 미완료 |
 
-DB의 step10-verified-restore.sql 적용 완료. 구형 restore_memo_from_backup은 service_role 실행 권한도 회수됨.
-복구 API 격리 시험 9개와 머지 커밋 변경 목록 시험 1개 통과. API 격리 시험은 인증·RPC 가상 응답을 사용함.
+DB의 step10-created-memo-backups.sql 및 step10-verified-restore.sql 적용 완료. 구형 restore_memo_from_backup의 실행 권한 회수도 유지함.
+복구 API 격리 시험 15개, 배포 정보/기본 자기점검 3개, 관련 회귀시험 12개, 판정기 4개, 탐지 6개 통과. API 시험의 인증·RPC는 가상 응답임.
 머지 커밋도 첫 번째 부모 기준 변경 파일을 제출 묶음에 포함하도록 보완함.
 이하 '실측 완료' 기록은 과거 실행 결과임. 최신 심판 결과는 재제출 후 확인하며 로컬/DB 시험과 구분함.
+
+### 이번 수정 위치와 직접 확인
+
+| 위치 | 변경 내용 |
+|---|---|
+| api/restore/[id].js | 사본의 소유자·해시와 복원 후 DB 응답을 대조하고 실제 메모를 반환함 |
+| src/recovery/trusted-memo-backup.mjs | 기존 B 지문 유지, 신규 최초 사본은 DB 서명 검증을 요구함 |
+| supabase/step10-created-memo-backups.sql | INSERT 시 사본 생성. PUT/DELETE로 덮어쓰지 않음. 서명 키·사본은 비공개 스키마에 보관함 |
+| supabase/step10-verified-restore.sql | 잠금 안에서 사본 재조회·검증, 지정 ID 한 건 복원, DB 행 재조회와 결과 반환 |
+| scripts/deployment-identity.mjs | 설정의 restoreRoute를 배포 /aleph.json에 포함하고 허용 POST 경로와 대조함 |
+| public/recovery-check.js | B 로그인 후 생성→변조→복원 응답→GET→삭제→복원→GET을 직접 확인함 |
+
+응답의 `ownerId`/`owner_id`는 같은 소유자이며 `contentSha256`/`content_sha256`은 UTF-8 **본문만**의 SHA-256임.
+기존 백업 지문과 감사 기록에는 제목+NUL+본문 해시를 계속 사용하며, 응답의 `snapshotSha256`으로 구분함.
+DB 시험: `supabase/step10-created-memo-test.sql` 및 기존 소유자 변조 시험을 실제 학습 DB에서 실행하여 통과함. 시험 메모·사본·감사 변경은 롤백함.
+사본 없음, 손상 사본, 내용+저장 해시 동시 변조, 잘못된 소유자, 오래된 미리보기는 중단됨. 다른 메모와 기존 감사 기록 보존을 대조함.
+비공개 사본/키에는 PUBLIC·anon·authenticated·service_role 직접 접근을 허용하지 않음. 공개 RPC는 검증된 서버의 service_role만 실행함.
+
+로컬 재실행: `npm.cmd run recovery:test`.
+배포의 실제 B 로그인 흐름은 자동 실행하지 않았음. B로 로그인한 배포 화면에서 F12 → Console에 아래를 실행함. 비밀번호·키·토큰을 입력하지 않음.
+
+```js
+await (await import('/recovery-check.js')).runRecoveryCheck()
+```
+
+정상 결과: `passed: true`, `contentHashMatches: true`. 비로그인 복원은 401이어야 함.
+이 도구는 만든 시험 메모 한 건만 정리하며 사본·감사 기록은 유지함. 최신 심판 결과는 미확인임.
 
 
 ## 10단계 제작 4 — 복구 뒤 1~9단계 회귀시험

@@ -45,5 +45,13 @@ export function deploymentIdentity(env, config) {
     result.allowedRoutes = config.allowedRoutes;
     result.originalApiUrl = config.originalApiUrl;
   }
+  if (step >= 10) {
+    if (typeof config.restoreRoute !== 'string'
+        || !/^\/api\/[A-Za-z0-9_:/-]+$/u.test(config.restoreRoute)
+        || !config.allowedRoutes.includes('POST ' + config.restoreRoute)) {
+      throw new Error('10단계부터 허용한 POST 복구 경로가 필요합니다.');
+    }
+    result.restoreRoute = config.restoreRoute;
+  }
   return result;
 }

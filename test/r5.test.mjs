@@ -55,3 +55,13 @@ test('first attack check reads public data.json without credentials', async () =
     globalThis.fetch = originalFetch;
   }
 });
+
+test('stage 10 deployment advertises its configured POST recovery route', () => {
+  const recoveryConfig = { ...config, step: 10,
+    allowedRoutes: ['GET /api/memos', 'POST /api/restore/:id'],
+    originalApiUrl: 'https://fixture.supabase.co/rest/v1/memos',
+    restoreRoute: '/api/restore/:id' };
+  assert.equal(deploymentIdentity(env, recoveryConfig).restoreRoute, recoveryConfig.restoreRoute);
+  assert.throws(() => deploymentIdentity(env, { ...recoveryConfig,
+    restoreRoute: '/api/unlisted/:id' }));
+});

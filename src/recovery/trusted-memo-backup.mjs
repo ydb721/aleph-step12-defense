@@ -12,12 +12,14 @@ export const TRUSTED_B_BACKUP = Object.freeze({
 });
 
 export function isTrustedMemoBackupPreview(preview) {
-  return Boolean(
-    preview
-    && typeof preview === 'object'
-    && preview.id === TRUSTED_B_BACKUP.id
-    && preview.version === TRUSTED_B_BACKUP.version
-    && preview.capturedAt === TRUSTED_B_BACKUP.capturedAt
-    && preview.verified === true
-  );
+  if (!preview || typeof preview !== 'object' || preview.verified !== true) return false;
+  // The historical B snapshot retains its independently pinned fingerprint.
+  if (preview.id === TRUSTED_B_BACKUP.id) {
+    return preview.backupKind === 'legacy'
+      && preview.version === TRUSTED_B_BACKUP.version
+      && preview.capturedAt === TRUSTED_B_BACKUP.capturedAt;
+  }
+  // Newly created snapshots are sealed inside the private database schema.
+  // The public RPC recomputes their hash and HMAC before emitting this flag.
+  return preview.backupKind === 'on_create' && preview.sealVerified === true;
 }
