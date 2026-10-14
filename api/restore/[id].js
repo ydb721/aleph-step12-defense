@@ -1,3 +1,4 @@
+import { isTrustedMemoBackupPreview } from '../../src/recovery/trusted-memo-backup.mjs';
 import { createRequire } from 'node:module';
 import { createLoginVerifier } from '../../src/verify-login.mjs';
 
@@ -90,7 +91,10 @@ async function previewRestore(actorId, memoId) {
   });
 
   if (result.status !== 200) return result;
-  if (!validPreview(result.body, memoId)) {
+  if (
+    !validPreview(result.body, memoId) ||
+    !isTrustedMemoBackupPreview(result.body)
+  ) {
     return { status: 409, body: { error: 'BACKUP_UNVERIFIED' } };
   }
 
@@ -164,7 +168,7 @@ export default async function handler(req, res) {
   const memoId = routeId.toLowerCase();
 
   if (!req.headers.authorization && req.headers.origin
-      && req.headers.origin !== 'https://' + req.headers.host) {
+    && req.headers.origin !== 'https://' + req.headers.host) {
     return res.status(403).json({ error: 'ORIGIN_REJECTED' });
   }
 
@@ -178,12 +182,12 @@ export default async function handler(req, res) {
   const body = readBody(req);
   if (body != null) {
     if (typeof body !== 'object' || Array.isArray(body)
-        || Object.keys(body).some((key) => !['preview', 'expectedVersion', 'expectedState'].includes(key))
-        || (body.preview !== undefined && body.preview !== true)
-        || (body.expectedVersion !== undefined && !SHA.test(body.expectedVersion))
-        || (body.expectedState !== undefined && !SHA.test(body.expectedState))
-        || (body.preview === true
-          && (body.expectedVersion !== undefined || body.expectedState !== undefined))) {
+      || Object.keys(body).some((key) => !['preview', 'expectedVersion', 'expectedState'].includes(key))
+      || (body.preview !== undefined && body.preview !== true)
+      || (body.expectedVersion !== undefined && !SHA.test(body.expectedVersion))
+      || (body.expectedState !== undefined && !SHA.test(body.expectedState))
+      || (body.preview === true
+        && (body.expectedVersion !== undefined || body.expectedState !== undefined))) {
       return res.status(400).json({ error: 'INVALID_RESTORE_REQUEST' });
     }
   }
