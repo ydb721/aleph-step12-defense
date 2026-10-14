@@ -177,6 +177,10 @@ export default async function handler(req, res) {
   catch { return res.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' }); }
 
   const identity = await verifyLogin(authHeader(req));
+  console.info('RESTORE_AUTH_CHECK', {
+    kind: identity?.kind ?? 'invalid',
+    judgeIdentity: identity?.kind === 'judge' ? identity.identity : null
+  });
   if (!identity) return res.status(401).json({ error: 'AUTH_REQUIRED' });
 
   const body = readBody(req);
