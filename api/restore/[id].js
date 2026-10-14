@@ -7,7 +7,7 @@ const config = require('../../aleph.config.json');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const SHA = /^[0-9a-f]{64}$/u;
-const CHANGED = new Set(['title', 'content', 'create']);
+const CHANGED = new Set(['title', 'content', 'owner_id', 'create']);
 
 let verifier;
 

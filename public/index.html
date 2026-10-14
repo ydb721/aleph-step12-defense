@@ -151,7 +151,7 @@
             || !/^[0-9a-f]{64}$/u.test(plan.stateVersion ?? '')
             || !Array.isArray(plan.changedFields)) throw new Error('복원 사본 검증 실패');
         recoveryPlan = { id, version: plan.version, stateVersion: plan.stateVersion };
-        const labels = { title: '제목', content: '내용', create: '삭제된 메모 다시 생성' };
+        const labels = { title: '제목', content: '내용', owner_id: '소유권을 검증된 백업의 소유자로 복원', create: '삭제된 메모 다시 생성' };
         recoveryDetails.textContent = '대상: ' + id + ' · 백업 버전: ' + plan.version
           + ' · 백업 시각: ' + plan.capturedAt + ' · 변경 항목: '
           + (plan.changedFields.map(field => labels[field] ?? field).join(', ') || '없음');

@@ -124,3 +124,11 @@ test('a verified RPC response that did not restore cannot be reported as restore
   assert.notEqual(result.status, 200);
   assert.notEqual(result.body.restored, true);
 });
+
+test('owner tamper is displayed before restoring the verified backup owner', async () => {
+  const result = await call({ body: { preview: true },
+    responses: [{ body: preview(['owner_id', 'content']) }] });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.changedFields, ['owner_id', 'content']);
+  assert.equal(result.calls.length, 1);
+});

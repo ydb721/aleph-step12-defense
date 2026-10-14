@@ -67,8 +67,10 @@ begin
       'hex'
     );
   else
-    if m.owner_id is distinct from p_actor then
-      raise exception using errcode = 'P0001', message = 'owner_mismatch';
+    -- Authority comes from the verified pre-incident backup owner above.
+    -- The current owner field may itself be part of the incident.
+    if m.owner_id is distinct from b.owner_id then
+      changes := changes || jsonb_build_array('owner_id');
     end if;
 
     if m.title is distinct from b.title then
@@ -153,10 +155,10 @@ begin
   end if;
 
   update public.memos
-  set title = b.title,
+  set owner_id = b.owner_id,
+      title = b.title,
       content = b.content
-  where public_id = b.public_id
-    and owner_id = b.owner_id;
+  where public_id = b.public_id;
 
   if not found then
     insert into public.memos (public_id, owner_id, title, content)
