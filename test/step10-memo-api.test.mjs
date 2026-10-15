@@ -263,6 +263,35 @@ test('memo create, read, update and delete retain their responses while recordin
   }
 });
 
+test('memo PUT supports a body-only or title-only B tamper without changing owner', async () => {
+  const cases = [
+    { input: { body: 'Tampered B content' }, patch: { content: 'Tampered B content' },
+      returned: { title: note.title, content: 'Tampered B content' } },
+    { input: { title: 'Tampered B title' }, patch: { title: 'Tampered B title' },
+      returned: { title: 'Tampered B title', content: note.body } },
+  ];
+  for (const item of cases) {
+    const result = await call({ route: 'api/memos/[id].js', method: 'PUT',
+      body: item.input, responses: [{ body: [{
+        public_id: trusted.id, owner_id: owner, ...item.returned,
+      }] }] });
+    assert.equal(result.status, 200);
+    assert.equal(result.calls.length, 1);
+    assert.equal(result.calls[0].method, 'PATCH');
+    assert.deepEqual(result.calls[0].body, item.patch);
+    assert.deepEqual(result.body, { id: trusted.id,
+      title: item.returned.title, body: item.returned.content });
+  }
+});
+
+test('memo partial PUT rejects empty, malformed and owner-claim bodies without DB writes', async () => {
+  for (const body of [{}, { title: '  ' }, { body: 123 }, { body: 'ok', owner_id: owner }]) {
+    const result = await call({ route: 'api/memos/[id].js', method: 'PUT', body });
+    assert.equal(result.status, Object.hasOwn(body, 'owner_id') ? 403 : 400);
+    assert.equal(result.calls.length, 0);
+  }
+});
+
 test('memo authentication and owner rejection still stop without exposing returned memo values', async () => {
   const unauthenticated = await call({ route: 'api/memos/[id].js', method: 'GET', authorized: false });
   assert.equal(unauthenticated.status, 401);

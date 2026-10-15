@@ -34,6 +34,24 @@ function memoFields(value) {
   return { title, content: body };
 }
 
+// PUT accepts either field while retaining the existing complete-update contract.
+// Only supplied content fields are sent to PostgREST; ownership is never taken from the request.
+function memoUpdateFields(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const fields = {};
+  if (Object.hasOwn(value, 'title')) {
+    if (typeof value.title !== 'string') return null;
+    const title = value.title.trim();
+    if (!title || title.length > 120) return null;
+    fields.title = title;
+  }
+  if (Object.hasOwn(value, 'body')) {
+    if (typeof value.body !== 'string' || value.body.length > 4000) return null;
+    fields.content = value.body;
+  }
+  return Object.keys(fields).length ? fields : null;
+}
+
 function resultMemo(note) {
   return { id: note.public_id, title: note.title, body: note.content ?? '' };
 }
@@ -190,7 +208,7 @@ export async function handleMemos(req, res, noteId = null) {
       if (hasIdentityClaim(incoming)) {
         return res.status(403).json({ error: 'IDENTITY_CLAIM_FORBIDDEN' });
       }
-      const fields = memoFields(incoming);
+      const fields = memoUpdateFields(incoming);
       if (!fields) return res.status(400).json({ error: 'INVALID_MEMO' });
       const result = await dbRequest('PATCH', {
         ...byId,
