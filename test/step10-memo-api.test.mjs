@@ -28,6 +28,7 @@ async function call({ route = 'api/restore/[id].js', id = trusted.id, body,
     URL,
     fetch: async (url, init) => {
       calls.push({ name: new URL(url).pathname.split('/').at(-1), method: init.method,
+        params: Object.fromEntries(new URL(url).searchParams),
         body: init.body === undefined ? null : JSON.parse(init.body) });
       const response = responses.shift();
       assert.ok(response, 'unexpected RPC call');
@@ -458,6 +459,73 @@ test('memo PUT supports a body-only or title-only B tamper without changing owne
     assert.deepEqual(result.calls[0].body, item.patch);
     assert.deepEqual(result.body, { id: trusted.id,
       title: item.returned.title, body: item.returned.content });
+  }
+});
+
+// Use letters so UUID case differences cannot disappear in numeric-only fixtures.
+const putOwner = 'abcdef01-2345-4678-9abc-def012345678';
+for (const [label, userId, returnedOwner] of [
+  ['matching lowercase UUIDs', putOwner, putOwner],
+  ['an uppercase authenticated UUID', putOwner.toUpperCase(), putOwner],
+  ['an uppercase database owner UUID', putOwner, putOwner.toUpperCase()],
+]) {
+  test('memo PUT accepts ' + label, async () => {
+    for (const kind of ['student', 'judge']) {
+      const result = await call({ route: 'api/memos/[id].js', method: 'PUT', kind, userId,
+        body: { body: note.body }, responses: [{ body: [{
+          public_id: trusted.id, owner_id: returnedOwner, title: note.title, content: note.body,
+        }] }] });
+      assert.equal(result.status, 200);
+      assert.deepEqual(result.body, { id: trusted.id, ...note });
+      assert.equal(result.calls.length, 1);
+      assert.equal(result.calls[0].method, 'PATCH');
+      assert.equal(result.calls[0].params.public_id, 'eq.' + trusted.id);
+      assert.equal(result.calls[0].params.owner_id, 'eq.' + userId);
+      assert.deepEqual(result.calls[0].body, { content: note.body });
+    }
+  });
+}
+
+test('memo PUT rejects different UUIDs and preserves the authenticated owner filter', async () => {
+  const userId = putOwner.toUpperCase();
+  const otherOwner = 'bbcdef01-2345-4678-9abc-def012345678';
+  for (const kind of ['student', 'judge']) {
+    for (const [rows, status, error] of [
+      [[], 404, 'MEMO_NOT_FOUND'],
+      [[{ public_id: trusted.id, owner_id: otherOwner, title: note.title, content: note.body }],
+        403, 'OWNER_MISMATCH'],
+    ]) {
+      const result = await call({ route: 'api/memos/[id].js', method: 'PUT', kind, userId,
+        body: { body: note.body }, responses: [{ body: rows }] });
+      assert.equal(result.status, status);
+      assert.deepEqual(result.body, { error });
+      assert.equal(result.calls.length, 1);
+      assert.equal(result.calls[0].method, 'PATCH');
+      assert.equal(result.calls[0].params.public_id, 'eq.' + trusted.id);
+      assert.equal(result.calls[0].params.owner_id, 'eq.' + userId);
+      assert.deepEqual(result.calls[0].body, { content: note.body });
+    }
+  }
+});
+
+test('memo PUT rejects unauthenticated requests before any database call', async () => {
+  const result = await call({ route: 'api/memos/[id].js', method: 'PUT',
+    authorized: false, body: { body: note.body } });
+  assert.equal(result.status, 401);
+  assert.deepEqual(result.body, { error: 'AUTH_REQUIRED' });
+  assert.equal(result.calls.length, 0);
+});
+
+test('memo PUT rejects request identity claims before any database call', async () => {
+  for (const kind of ['student', 'judge']) {
+    for (const field of ['owner_id', 'ownerId', 'userId', 'subjectId', 'role']) {
+      const result = await call({ route: 'api/memos/[id].js', method: 'PUT', kind,
+        userId: putOwner.toUpperCase(),
+        body: { body: note.body, [field]: field === 'role' ? 'admin' : putOwner } });
+      assert.equal(result.status, 403);
+      assert.deepEqual(result.body, { error: 'IDENTITY_CLAIM_FORBIDDEN' });
+      assert.equal(result.calls.length, 0);
+    }
   }
 });
 
