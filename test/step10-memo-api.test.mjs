@@ -46,7 +46,7 @@ async function call({ route = 'api/restore/[id].js', id = trusted.id, body,
         this.setExport('createHash', createHash);
         this.setExport('randomUUID', randomUUID);
       }, { context });
-    } else if (path.endsWith('/src/verify-login.mjs')) {
+    } else if (path === resolve('src/verify-login.mjs')) {
       module = new SyntheticModule(['createLoginVerifier'], function () {
         this.setExport('createLoginVerifier', () => async () => authorized
           ? { kind: 'student', userId: owner } : null);
