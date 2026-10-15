@@ -56,20 +56,23 @@ test('first attack check reads public data.json without credentials', async () =
   }
 });
 
-test('stage 10 deployment advertises its configured POST recovery route', () => {
+test('stage 10 deployment advertises its separate recovery route while preserving allowed routes', () => {
   const recoveryConfig = { ...config, step: 10,
-    allowedRoutes: ['GET /api/memos', 'POST /api/restore/:id'],
+    allowedRoutes: ['GET /api/memos'],
     originalApiUrl: 'https://fixture.supabase.co/rest/v1/memos',
     restoreRoute: '/api/restore/:id' };
   assert.equal(deploymentIdentity(env, recoveryConfig).restoreRoute, recoveryConfig.restoreRoute);
   assert.equal(deploymentIdentity(env, recoveryConfig).publicAppUrl, config.publicAppUrl);
+  assert.deepEqual(deploymentIdentity(env, recoveryConfig).allowedRoutes, ['GET /api/memos']);
   assert.throws(() => deploymentIdentity(env, { ...recoveryConfig,
-    restoreRoute: '/api/unlisted/:id' }));
+    restoreRoute: '/outside/restore/:id' }));
+  assert.throws(() => deploymentIdentity(env, { ...recoveryConfig,
+    restoreRoute: null }));
 });
 
 test('stage 10 public origin cannot contain credentials, another protocol or a path', () => {
   const recoveryConfig = { ...config, step: 10,
-    allowedRoutes: ['POST /api/restore/:id'],
+    allowedRoutes: ['GET /api/memos'],
     originalApiUrl: 'https://fixture.supabase.co/rest/v1/memos', restoreRoute: '/api/restore/:id' };
   for (const publicAppUrl of ['http://student-defense.vercel.app',
     'https://name:password@student-defense.vercel.app', 'https://student-defense.vercel.app/path',
