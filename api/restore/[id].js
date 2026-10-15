@@ -75,6 +75,12 @@ async function rpc(name, body, trace) {
     const known = new Set(['backup_not_found', 'backup_hash_mismatch', 'backup_seal_mismatch', 'owner_mismatch',
       'expected_versions_required', 'backup_or_target_changed', 'restore_verify_failed']);
     trace('rpc_rejected', { rpc: name, code, reason: known.has(message) ? message : 'other' });
+    if (code === 'P0001' && message === 'backup_not_found') {
+      return { status: 404, body: { error: 'MEMO_NOT_FOUND' } };
+    }
+    if (code === 'P0001' && message === 'restore_verify_failed') {
+      return { status: 500, body: { error: 'RESTORE_MISMATCH' } };
+    }
     if (message === 'backup_or_target_changed') {
       return { status: 409, body: { error: 'RECOVERY_STATE_CHANGED' } };
     }
@@ -111,6 +117,15 @@ async function previewRestore(actorId, memoId, trace) {
   if (result.status !== 200) return result;
   const comparison = {
     structureValid: Boolean(validPreview(result.body, memoId)),
+    verified: result.body?.verified === true,
+    versionValid: SHA.test(result.body?.version ?? ''),
+    stateVersionValid: SHA.test(result.body?.stateVersion ?? ''),
+    ownerValid: UUID.test(result.body?.ownerId ?? ''),
+    contentHashValid: SHA.test(result.body?.contentSha256 ?? ''),
+    snapshotHashValid: SHA.test(result.body?.snapshotSha256 ?? ''),
+    captureValid: typeof result.body?.capturedAt === 'string',
+    changedFieldsValid: Array.isArray(result.body?.changedFields)
+      && result.body.changedFields.every(field => CHANGED.has(field)),
     idMatches: result.body?.id === memoId,
     ownerMatches: typeof result.body?.ownerId === 'string'
       && result.body.ownerId.toLowerCase() === actorId.toLowerCase(),
@@ -203,7 +218,7 @@ async function restoreMemo(actorId, memoId, expectedVersion, expectedState, trac
       || memo.snapshotSha256 !== preview.body.snapshotSha256
       || memo.snapshotSha256 !== hash(memo.title + '\0' + memo.body)) {
     trace('restore_result_rejected');
-    return { status: 409, body: { error: 'RESTORE_MISMATCH' } };
+    return { status: 500, body: { error: 'RESTORE_MISMATCH' } };
   }
 
   return {
@@ -218,6 +233,8 @@ async function restoreMemo(actorId, memoId, expectedVersion, expectedState, trac
       content_sha256: memo.content_sha256,
       snapshotSha256: memo.snapshotSha256,
       backupVersion: memo.backupVersion,
+      capturedAt: preview.body.capturedAt,
+      changedFields: preview.body.changedFields,
       verified: true,
       restored: true,
     },

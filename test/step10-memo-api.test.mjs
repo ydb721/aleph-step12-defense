@@ -5,6 +5,8 @@ import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 import { resolve, dirname } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { TRUSTED_B_BACKUP as trusted } from '../src/recovery/trusted-memo-backup.mjs';
+import { createLoginVerifier } from '../src/verify-login.mjs';
+import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 
 // Authentication and the RPC transport are simulated here. The real API
 // handlers and pinned-backup module execute unchanged inside the VM.
@@ -15,7 +17,7 @@ const contentSha256 = sha(note.body);
 const snapshotSha256 = sha(note.title + '\0' + note.body);
 
 async function call({ route = 'api/restore/[id].js', id = trusted.id, body,
-  responses = [], authorized = true, method = 'POST' }) {
+  responses = [], authorized = true, method = 'POST', userId = owner, kind = 'student' }) {
   const calls = [];
   const logs = [];
   const context = createContext({
@@ -29,7 +31,8 @@ async function call({ route = 'api/restore/[id].js', id = trusted.id, body,
         body: init.body === undefined ? null : JSON.parse(init.body) });
       const response = responses.shift();
       assert.ok(response, 'unexpected RPC call');
-      return { ok: response.status === undefined || response.status === 200,
+      return { status: response.status ?? 200,
+        ok: response.status === undefined || response.status === 200,
         json: async () => response.body };
     },
   });
@@ -49,7 +52,9 @@ async function call({ route = 'api/restore/[id].js', id = trusted.id, body,
     } else if (path === resolve('src/verify-login.mjs')) {
       module = new SyntheticModule(['createLoginVerifier'], function () {
         this.setExport('createLoginVerifier', () => async () => authorized
-          ? { kind: 'student', userId: owner } : null);
+          ? { kind, userId, ...(kind === 'judge' ? {
+            runId: '33333333-3333-4333-8333-333333333333', identity: 'b',
+          } : {}) } : null);
       }, { context });
     } else {
       module = new SourceTextModule(await readFile(path, 'utf8'), { context, identifier: path });
@@ -86,6 +91,126 @@ const restored = (p = preview()) => ({
   snapshotSha256, backupVersion: p.version, verified: true, restored: true,
 });
 
+test('signed judge JWT preserves sub rather than mapping the B label to a student account', async () => {
+  const config = JSON.parse(await readFile(resolve('aleph.config.json'), 'utf8'));
+  const { privateKey, publicKey } = await generateKeyPair('ES256');
+  const keySet = createLocalJWKSet({ keys: [{ ...await exportJWK(publicKey), kid: 'fixture' }] });
+  const verify = createLoginVerifier({ config, judgeKeySet: keySet,
+    supabaseClient: { auth: { getClaims() { throw new Error('judge must not use student auth'); } } } });
+  const now = Math.floor(Date.now() / 1000);
+  const claims = { iss: config.judgeIssuer, aud: new URL(config.publicAppUrl).hostname,
+    sub: randomUUID(), aleph_run: randomUUID(), aleph_role: 'judge', aleph_identity: 'b',
+    iat: now, exp: now + 600 };
+  const sign = payload => new SignJWT(payload).setProtectedHeader({ alg: 'ES256', kid: 'fixture' })
+    .sign(privateKey);
+  const identity = await verify('Bearer ' + await sign(claims));
+  assert.equal(identity.kind, 'judge');
+  assert.equal(identity.userId, claims.sub);
+  const second = { ...claims, sub: randomUUID() };
+  assert.equal((await verify('Bearer ' + await sign(second))).userId, second.sub);
+  for (const patch of [{ aud: 'wrong.vercel.app' }, { aleph_role: 'student' },
+    { aleph_identity: 'c' }, { exp: now - 60 }, { sub: 'not-a-uuid' }]) {
+    assert.equal(await verify('Bearer ' + await sign({ ...claims, ...patch })), null);
+  }
+});
+
+test('judge identity is forwarded unchanged to memo ownership and both recovery RPCs', async () => {
+  const userId = randomUUID();
+  const id = randomUUID();
+  const created = await call({ route: 'api/memos.js', method: 'POST', kind: 'judge', userId,
+    body: { id, ...note }, responses: [{ body: [{ public_id: id }] }] });
+  assert.equal(created.status, 201);
+  assert.equal(created.calls[0].body.owner_id, userId);
+  const p = { ...preview(), id, ownerId: userId, backupKind: 'on_create', sealVerified: true };
+  const result = await call({ id, kind: 'judge', userId, responses: [{ body: p },
+    { body: { ...restored(p), ownerId: userId, owner_id: userId } }] });
+  assert.equal(result.status, 200);
+  assert.ok(result.calls.every(c => c.body.p_actor === userId));
+});
+
+test('verified database previews can still be rejected by each API validation gate', async () => {
+  const patches = [{ id: randomUUID() }, { version: 'invalid' }, { stateVersion: undefined },
+    { ownerId: randomUUID() }, { contentSha256: undefined }, { snapshotSha256: undefined },
+    { capturedAt: undefined }, { changedFields: ['body'] }, { changedFields: undefined },
+    { capturedAt: trusted.capturedAt.replace('+00:00', 'Z') }, { backupKind: 'on_create', sealVerified: true }];
+  for (const patch of patches) {
+    const result = await call({ responses: [{ body: { ...preview(), ...patch } }] });
+    assert.equal(result.status, 409);
+    assert.equal(result.body.error, 'BACKUP_UNVERIFIED');
+    assert.equal(result.calls.length, 1);
+    assert.ok(result.logs.some(l => l.stage === 'backup_rejected'));
+  }
+});
+
+test('generic P0001 rejection is BACKUP_UNVERIFIED at either recovery RPC', async () => {
+  for (const message of ['backup_hash_mismatch', 'backup_seal_mismatch',
+    'expected_versions_required', 'owner_mismatch', 'unexpected_fixture_exception']) {
+    for (const duringRestore of [false, true]) {
+      const rejection = { status: 400, body: { code: 'P0001', message } };
+      const result = await call({ responses: duringRestore ? [{ body: preview() }, rejection] : [rejection] });
+      assert.equal(result.status, 409);
+      assert.equal(result.body.error, 'BACKUP_UNVERIFIED');
+      assert.equal(result.calls.length, duringRestore ? 2 : 1);
+      assert.equal(result.logs.find(l => l.stage === 'rpc_rejected').rpc,
+        duringRestore ? 'restore_verified_memo' : 'preview_memo_recovery');
+    }
+  }
+});
+
+test('unexpected judge control fields fail before any backup lookup, not as BACKUP_UNVERIFIED', async () => {
+  for (const body of [{ id: trusted.id }, { backupVersion: trusted.version },
+    { contentSha256 }, { preview: false }]) {
+    const result = await call({ body });
+    assert.equal(result.status, 400);
+    assert.equal(result.body.error, 'INVALID_RESTORE_REQUEST');
+    assert.equal(result.calls.length, 0);
+  }
+});
+
+test('preview shape diagnostics identify the failed field without logging raw values', async () => {
+  const cases = [
+    ['verified', { verified: false }], ['versionValid', { version: 'PRIVATE_VERSION' }],
+    ['stateVersionValid', { stateVersion: undefined }], ['ownerValid', { ownerId: 'PRIVATE_OWNER' }],
+    ['contentHashValid', { contentSha256: 'PRIVATE_HASH' }],
+    ['snapshotHashValid', { snapshotSha256: undefined }], ['captureValid', { capturedAt: undefined }],
+    ['changedFieldsValid', { changedFields: ['PRIVATE_FIELD'] }],
+  ];
+  for (const [flag, patch] of cases) {
+    const result = await call({ responses: [{ body: { ...preview(), ...patch } }] });
+    assert.equal(result.status, 409);
+    const compared = result.logs.find(l => l.stage === 'backup_compared');
+    assert.equal(compared[flag], false);
+    assert.equal(compared.structureValid, false);
+    assert.ok(!JSON.stringify(result.logs).includes('PRIVATE_'));
+  }
+});
+
+test('judge create, tamper and restore logs share run, actor and memo references', async () => {
+  const id = randomUUID();
+  const p = { ...preview(), id, backupKind: 'on_create', sealVerified: true };
+  const row = { public_id: id, owner_id: owner, title: note.title, content: note.body };
+  const created = await call({ route: 'api/memos.js', method: 'POST', kind: 'judge',
+    body: { id, ...note }, responses: [{ body: [row] }] });
+  const tampered = await call({ route: 'api/memos/[id].js', method: 'PUT', kind: 'judge', id,
+    body: { body: 'Changed fixture' }, responses: [{ body: [{ ...row, content: 'Changed fixture' }] }] });
+  const recovered = await call({ kind: 'judge', id, responses: [{ body: p }, { body: restored(p) }] });
+  const finals = [created, tampered, recovered].map(r => r.logs.at(-1));
+  assert.deepEqual(finals.map(l => l.status), [201, 200, 200]);
+  for (const name of ['runRef', 'actorRef', 'memoRef']) {
+    assert.ok(finals[0][name]);
+    assert.equal(new Set(finals.map(l => l[name])).size, 1);
+  }
+  assert.equal(new Set(finals.map(l => l.traceId)).size, 3);
+  assert.ok(finals.every(l => l.identity === 'b' && l.kind === 'judge'));
+  for (const stage of ['authentication', 'rpc_started', 'rpc_finished', 'backup_compared',
+    'backup_verified', 'restored_row_compared', 'completed']) {
+    assert.ok(recovered.logs.some(l => l.stage === stage), stage);
+  }
+  const serialized = JSON.stringify([created.logs, tampered.logs, recovered.logs]);
+  for (const value of [id, owner, note.body, 'Changed fixture', contentSha256,
+    '33333333-3333-4333-8333-333333333333']) assert.ok(!serialized.includes(value));
+});
+
 test('tampered target can restore from a verified unchanged backup', async () => {
   const p = preview();
   const result = await call({ body: { expectedVersion: p.version, expectedState: p.stateVersion },
@@ -108,10 +233,10 @@ test('both entry points reject a self-consistent but untrusted backup', async ()
     assert.equal(result.calls.length, 1);
   }
 });
-test('missing or corrupt backup never calls restore', async () => {
-  for (const message of ['backup_not_found', 'backup_hash_mismatch']) {
+test('missing and corrupt backups have distinct statuses and never call restore', async () => {
+  for (const message of ['backup_not_found', 'backup_hash_mismatch', 'backup_seal_mismatch']) {
     const result = await call({ body: {}, responses: [{ status: 409, body: { code: 'P0001', message } }] });
-    assert.equal(result.status, 409);
+    assert.equal(result.status, message === 'backup_not_found' ? 404 : 409);
     assert.equal(result.calls.length, 1);
   }
 });
@@ -125,6 +250,55 @@ test('transaction revalidation failure is never reported as restored', async () 
     { status: 409, body: { code: 'P0001', message: 'backup_or_target_changed' } }] });
   assert.equal(result.status, 409);
   assert.equal(result.body.error, 'RECOVERY_STATE_CHANGED');
+});
+
+test('database reread verification failure is a server error without a success payload', async () => {
+  const result = await call({ responses: [{ body: preview() },
+    { status: 400, body: { code: 'P0001', message: 'restore_verify_failed' } }] });
+  assert.equal(result.status, 500);
+  assert.equal(result.body.error, 'RESTORE_MISMATCH');
+  assert.equal(result.body.restored, undefined);
+  assert.equal(result.calls.length, 2);
+});
+
+test('404 and 500 require the matching database exception code at either RPC', async () => {
+  for (const duringRestore of [false, true]) {
+    for (const [message, expected] of [['backup_not_found', 404], ['restore_verify_failed', 500]]) {
+      for (const code of ['P0001', '22P02']) {
+        const rejection = { status: 400, body: { code, message } };
+        const result = await call({ responses: duringRestore ? [{ body: preview() }, rejection] : [rejection] });
+        assert.equal(result.status, code === 'P0001' ? expected : 502);
+        assert.equal(result.body.restored, undefined);
+        assert.equal(result.logs.find(l => l.stage === 'rpc_finished' && l.status === 400).status, 400);
+        assert.equal(result.logs.at(-1).status, result.status);
+      }
+    }
+  }
+});
+
+test('bodyless judge-style restore binds a fresh snapshot for every change kind', async () => {
+  for (const changes of [['title'], ['content'], ['title', 'content'], ['create']]) {
+    const id = randomUUID();
+    const p = { ...preview(changes), id, backupKind: 'on_create', sealVerified: true,
+      version: 'c'.repeat(64) };
+    const result = await call({ id, responses: [{ body: p }, { body: restored(p) }] });
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body.changedFields, changes);
+    assert.equal(result.body.id, id);
+    assert.equal(result.body.contentSha256, sha(result.body.body));
+    assert.equal(result.calls[1].body.p_expected_version, p.version);
+    assert.equal(result.calls[1].body.p_expected_state, p.stateVersion);
+  }
+});
+
+test('another owners or absent snapshot is hidden on both entry points', async () => {
+  for (const route of ['api/restore/[id].js', 'api/restore.js']) {
+    const result = await call({ route, body: route.endsWith('/restore.js') ? { id: trusted.id } : {},
+      responses: [{ status: 400, body: { code: 'P0001', message: 'backup_not_found' } }] });
+    assert.equal(result.status, 404);
+    assert.deepEqual(result.body, { error: 'MEMO_NOT_FOUND' });
+    assert.equal(result.calls.length, 1);
+  }
 });
 test('malformed or null JSON cannot become an empty restore command', async () => {
   for (const body of ['{broken', 'null', 'false', '[]']) {
@@ -168,6 +342,9 @@ test('restore response contains the reread memo owner, body and body hash', asyn
   assert.equal(result.body.body, note.body);
   assert.equal(result.body.contentSha256, sha(result.body.body));
   assert.equal(result.body.content_sha256, result.body.contentSha256);
+  assert.equal(result.body.backupVersion, p.version);
+  assert.equal(result.body.capturedAt, p.capturedAt);
+  assert.deepEqual(result.body.changedFields, p.changedFields);
 });
 
 test('true flags cannot hide a missing or mismatching reread memo', async () => {
@@ -181,7 +358,7 @@ test('true flags cannot hide a missing or mismatching reread memo', async () => 
   ]) {
     const result = await call({ body: {},
       responses: [{ body: p }, { body: { ...restored(p), ...patch } }] });
-    assert.equal(result.status, 409);
+    assert.equal(result.status, 500);
     assert.equal(result.body.error, 'RESTORE_MISMATCH');
   }
 });
@@ -228,7 +405,7 @@ test('failed hash comparison and early auth rejection always have final status l
   const mismatch = await call({ body: {},
     responses: [{ body: p }, { body: { ...restored(p), body: note.body + ' changed' } }] });
   assert.equal(mismatch.logs.find(item => item.stage === 'restored_row_compared').bodyHashMatches, false);
-  assert.equal(mismatch.logs.at(-1).status, 409);
+  assert.equal(mismatch.logs.at(-1).status, 500);
   assert.equal(mismatch.logs.at(-1).error, 'RESTORE_MISMATCH');
   const denied = await call({ authorized: false, body: {} });
   assert.equal(denied.logs.at(-1).status, 401);

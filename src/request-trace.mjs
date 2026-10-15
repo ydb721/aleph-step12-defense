@@ -9,7 +9,9 @@ const FLAGS = new Set(['post', 'hasBearer', 'hasCookie', 'authorized', 'idValid'
   'fixedTarget', 'trusted', 'sealed', 'bodyHashMatches', 'snapshotHashMatches',
   'ownerAliasMatches', 'hashAliasMatches', 'verified', 'restored', 'suppliedVersion',
   'suppliedState', 'hasPreview', 'hasId', 'hasMemoId', 'hasNoteId', 'hasBackupVersion',
-  'hasExpectedVersion', 'hasExpectedState', 'hasContentHash']);
+  'hasExpectedVersion', 'hasExpectedState', 'hasContentHash',
+  'versionValid', 'stateVersionValid', 'ownerValid', 'contentHashValid',
+  'snapshotHashValid', 'captureValid', 'changedFieldsValid']);
 const ENUMS = {
   kind: new Set(['judge', 'student', 'invalid']),
   backupKind: new Set(['legacy', 'on_create']),
