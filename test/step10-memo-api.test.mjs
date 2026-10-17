@@ -6,10 +6,12 @@ import { resolve, dirname } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { TRUSTED_B_BACKUP as trusted } from '../src/recovery/trusted-memo-backup.mjs';
 import { createLoginVerifier } from '../src/verify-login.mjs';
+import { restoreItemTarget } from '../src/device-request.mjs';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 
 // Authentication and the RPC transport are simulated here. The real API
-// handlers and pinned-backup module execute unchanged inside the VM.
+// handlers and pinned-backup module execute inside the VM. Device admission is
+// independently exercised with the real WebAuthn verifier in step11 tests.
 const owner = '22222222-2222-4222-8222-222222222222';
 const note = { title: 'Recovery fixture', body: 'Original fixture content' };
 const sha = value => createHash('sha256').update(value, 'utf8').digest('hex');
@@ -17,7 +19,8 @@ const contentSha256 = sha(note.body);
 const snapshotSha256 = sha(note.title + '\0' + note.body);
 
 async function call({ route = 'api/restore/[id].js', id = trusted.id, body,
-  responses = [], authorized = true, method = 'POST', userId = owner, kind = 'student' }) {
+  responses = [], authorized = true, method = 'POST', userId = owner, kind = 'student',
+  nonEnumerableHeaders = false }) {
   const calls = [];
   const logs = [];
   const context = createContext({
@@ -50,6 +53,15 @@ async function call({ route = 'api/restore/[id].js', id = trusted.id, body,
         this.setExport('createHash', createHash);
         this.setExport('randomUUID', randomUUID);
       }, { context });
+    } else if (path === resolve('src/device-gate.mjs')) {
+      module = new SyntheticModule(['guardDeviceRequest'], function () {
+        this.setExport('guardDeviceRequest', async () => true);
+      }, { context });
+    } else if (path === resolve('src/device-request.mjs')) {
+      module = new SyntheticModule(['readVerifiedRequest', 'restoreItemTarget'], function () {
+        this.setExport('readVerifiedRequest', async () => undefined);
+        this.setExport('restoreItemTarget', restoreItemTarget);
+      }, { context });
     } else if (path === resolve('src/verify-login.mjs')) {
       module = new SyntheticModule(['createLoginVerifier'], function () {
         this.setExport('createLoginVerifier', () => async () => authorized
@@ -74,11 +86,12 @@ async function call({ route = 'api/restore/[id].js', id = trusted.id, body,
     json(value) { result.body = JSON.parse(JSON.stringify(value)); return result; },
     end() { return result; },
   };
-  await module.namespace.default({
-    method, url: '/api/memos/' + id,
-    headers: { authorization: 'fixture', host: 'fixture.vercel.app' },
-    query: { id }, body,
-  }, res);
+  const request = { method,
+    url: route === 'api/restore/item.js' ? '/api/restore/item?id=' + id : '/api/memos/' + id,
+    query: { id }, body };
+  Object.defineProperty(request, 'headers', { value: { authorization: 'fixture', host: 'fixture.vercel.app' },
+    enumerable: !nonEnumerableHeaders });
+  await module.namespace.default(request, res);
   return { ...result, calls, logs };
 }
 const preview = (changes = ['title', 'content']) => ({
@@ -233,6 +246,15 @@ test('both entry points reject a self-consistent but untrusted backup', async ()
     assert.equal(result.status, 409);
     assert.equal(result.calls.length, 1);
   }
+});
+
+test('static restore item preserves Vercel request metadata while delegating to the canonical recovery handler', async () => {
+  const result = await call({ route: 'api/restore/item.js', body: { preview: true },
+    nonEnumerableHeaders: true, responses: [{ body: preview() }] });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.verified, true);
+  assert.equal(result.calls.length, 1);
+  assert.equal(result.calls[0].name, 'preview_memo_recovery');
 });
 test('missing and corrupt backups have distinct statuses and never call restore', async () => {
   for (const message of ['backup_not_found', 'backup_hash_mismatch', 'backup_seal_mismatch']) {

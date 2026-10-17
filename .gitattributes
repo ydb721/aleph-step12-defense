@@ -1,0 +1,4 @@
+# The WebAuthn package is pinned and its byte-for-byte integrity is verified.
+public/vendor/simplewebauthn-browser.umd.js text eol=lf
+public/vendor/simplewebauthn-browser.js text eol=lf
+public/vendor/simplewebauthn-LICENSE.md text eol=lf

@@ -2,6 +2,7 @@ import { isTrustedMemoBackupPreview, TRUSTED_B_BACKUP } from '../../src/recovery
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { createLoginVerifier } from '../../src/verify-login.mjs';
+import { guardDeviceRequest } from '../../src/device-gate.mjs';
 import { createRequestTrace, traceRequestShape } from '../../src/request-trace.mjs';
 
 const require = createRequire(import.meta.url);
@@ -241,7 +242,7 @@ async function restoreMemo(actorId, memoId, expectedVersion, expectedState, trac
   };
 }
 
-export default async function handler(req, res) {
+export async function handleRestore(req, res, routeIdOverride, bodyOverride) {
   const trace = createRequestTrace(req, res, 'restore_by_id');
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('CDN-Cache-Control', 'no-store');
@@ -256,7 +257,9 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' });
   }
 
-  const routeId = Array.isArray(req.query?.id) ? null : req.query?.id;
+  const routeId = routeIdOverride === undefined
+    ? (Array.isArray(req.query?.id) ? null : req.query?.id)
+    : routeIdOverride;
   if (typeof routeId !== 'string' || !UUID.test(routeId)) {
     return res.status(400).json({ error: 'INVALID_RESTORE_ID' });
   }
@@ -277,8 +280,9 @@ export default async function handler(req, res) {
   trace('authentication', { kind: identity?.kind === 'judge' ? 'judge'
     : identity?.kind === 'student' ? 'student' : 'invalid' });
   if (!identity) return res.status(401).json({ error: 'AUTH_REQUIRED' });
+  if (!(await guardDeviceRequest(req, res, identity, authHeader(req), config))) return;
 
-  const body = readBody(req);
+  const body = bodyOverride === undefined ? readBody(req) : bodyOverride;
   traceRequestShape(trace, body);
   if (body != null) {
     if (typeof body !== 'object' || Array.isArray(body)
@@ -313,5 +317,9 @@ export default async function handler(req, res) {
     trace('dependency_failed');
     return res.status(502).json({ error: 'UPSTREAM_REQUEST_FAILED' });
   }
+}
+
+export default function handler(req, res) {
+  return handleRestore(req, res);
 }
 

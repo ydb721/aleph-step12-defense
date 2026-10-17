@@ -60,15 +60,15 @@
       <h2 id="device-heading">기기 보안 상태</h2>
       <span id="device-approval-status" class="device-status">기기 승인 미확인</span>
       <p>앱 설치와 서버의 기기 승인은 서로 다릅니다. 설치만으로 보호 자료 접근 권한이 생기지 않습니다.</p>
-      <p>로그인 후 등록 기기의 서버 승인 상태를 확인할 수 있습니다. Release A에서는 기존 메모 읽기·변경·복원이 10단계 인증 계약으로 계속 동작하며, 요청별 기기 서명 강제는 Release B에서 적용합니다.</p>
+      <p>로그인 후 서버에서 승인된 기기를 선택하고 연결하세요. 메모 읽기·변경·복원 및 기기 승인 결정마다 기기의 사용자 확인이 필요합니다.</p>
       <div id="device-controls" hidden>
         <label for="device-select">이 작업에 사용할 등록 기기</label>
         <select id="device-select"><option value="">기기 선택</option></select>
         <button id="device-register" type="button">이 기기 등록</button>
         <button id="device-refresh" type="button">기기 상태 새로 확인</button>
-        <button id="device-connect" type="button" disabled>선택 기기 상태 확인</button>
+        <button id="device-connect" type="button" disabled>승인 기기로 연결</button>
         <p>새 기기는 승인 대기로 등록됩니다. 최초 승인은 관리자의 별도 승인이 필요하며, 이후에는 승인된 기기에서 다른 기기를 승인할 수 있습니다.</p>
-        <p>등록된 공개 식별자는 이번 화면에서만 선택합니다. Release A의 기기 상태 표시는 기존 메모 접근 권한을 대신하지 않습니다.</p>
+        <p>등록된 공개 식별자는 이번 화면에서만 선택합니다. 기기 확인 취소 또는 승인 취소 시 표시 중인 보호 자료를 지웁니다.</p>
         <ul id="device-list" aria-label="등록 기기 목록"></ul>
       </div>
       <p id="device-feedback" role="status" aria-live="polite"></p>
@@ -97,7 +97,7 @@
       <p id="auth-error" class="auth-error" role="alert"></p>
     </section>
 
-    <div class="notice">모든 메모 요청은 서버 함수를 통하며 로그인과 소유자를 검사합니다. Release A에서는 기존 메모 API의 요청별 기기 서명을 아직 강제하지 않으며, 기기 등록·독립 승인을 마친 뒤 Release B에서 적용합니다.</div>
+    <div class="notice">모든 메모 요청은 서버 함수를 통하며, 로그인·소유자·승인 기기의 요청 증명을 검사합니다. 메모 변경이나 복원 후에는 메모 새로 읽기를 눌러 목록을 갱신하세요.</div>
     <form id="memo-editor" class="memo-editor" hidden>
       <h2>가상 메모 추가</h2>
       <label>제목<input id="memo-title" maxlength="120" required></label>
@@ -122,7 +122,7 @@
   </main>
 
   <script type="module">
-    import { refreshDevices, clearDeviceState } from '/device.mjs';
+    import { signedFetch, refreshDevices, clearDeviceState, hasApprovedDevice } from '/device.mjs';
 
     const form = document.querySelector('#login-form');
     const loginBtn = document.querySelector('#login-btn');
@@ -140,15 +140,16 @@
     const memoBody = document.querySelector('#memo-body');
     const memoFeedback = document.querySelector('#memo-feedback');
     let currentSession = null;
+    let deviceReady = false;
     let authGeneration = 0;
     const memoRequest = async (method, path, input) => {
       if (!currentSession?.user) throw new Error('로그인이 필요합니다.');
-      // Release A preserves the Step 10 request contract while devices are
-      // registered and independently approved for the later enforcing release.
-      const response = await fetch(path, {
+      if (!deviceReady || !hasApprovedDevice()) throw new Error('승인 기기로 연결한 뒤 다시 시도하세요.');
+      const response = await signedFetch(path, {
         method,
         cache: 'no-store',
         headers: {
+          // Serialize once; signedFetch hashes and sends these same body bytes.
           ...(input === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
         ...(input === undefined ? {} : { body: JSON.stringify(input) }),
@@ -185,7 +186,7 @@
       }
       recoveryPreview.disabled = true;
       try {
-        const plan = await memoRequest('POST', '/api/restore/' + encodeURIComponent(id), { preview: true });
+        const plan = await memoRequest('POST', '/api/restore/item?id=' + encodeURIComponent(id), { preview: true });
         if (generation !== recoveryGeneration || !currentSession) return;
         if (plan?.id !== id || plan.verified !== true
             || !/^[0-9a-f]{64}$/u.test(plan.version ?? '')
@@ -208,7 +209,7 @@
       recoveryApply.disabled = true;
       recoveryPreview.disabled = true;
       try {
-        const result = await memoRequest('POST', '/api/restore/' + encodeURIComponent(plan.id), {
+        const result = await memoRequest('POST', '/api/restore/item?id=' + encodeURIComponent(plan.id), {
           expectedVersion: plan.version, expectedState: plan.stateVersion,
         });
         if (generation !== recoveryGeneration || !currentSession) return;
@@ -217,7 +218,7 @@
         }
         resetRecovery();
         recoveryFeedback.textContent = '검증한 사본으로 한 건 복원 완료';
-        void loadMemos(currentSession, ++notesGeneration);
+        clearProtectedData('검증한 사본으로 한 건 복원했습니다. 메모 새로 읽기를 눌러 목록을 확인하세요.');
       } catch (error) {
         if (generation === recoveryGeneration) {
           resetRecovery();
@@ -235,6 +236,7 @@
 
     const clearProtectedData = (message) => {
       ++notesGeneration;
+      deviceReady = false;
       editor.hidden = true;
       recoveryPanel.hidden = true;
       editor.reset();
@@ -244,13 +246,13 @@
       showNotesMessage(message);
     };
     window.addEventListener('byteback:device-invalidated', event => {
-      memoFeedback.textContent = event.detail?.message || '기기 상태를 다시 확인하세요.';
+      clearProtectedData(event.detail?.message || '승인 기기로 다시 연결하세요.');
     });
 
     const loadMemos = async (session, generation) => {
       showNotesMessage('가상 자료를 불러오는 중입니다.');
       try {
-        const response = await fetch('/api/memos', {
+        const response = await signedFetch('/api/memos', {
           cache: 'no-store',
           credentials: 'same-origin',
         });
@@ -262,7 +264,8 @@
           throw new Error('자료 응답 형식이 올바르지 않습니다.');
         }
         if (generation !== notesGeneration) return;
-        if (session !== currentSession) return;
+        if (session !== currentSession || !hasApprovedDevice()) return;
+        deviceReady = true;
         editor.hidden = false;
         recoveryPanel.hidden = false;
         memoFeedback.textContent = '메모 조회 성공 · ' + data.length + '건';
@@ -313,11 +316,11 @@
             event.preventDefault();
             saveEdit.disabled = true;
             try {
-              await memoRequest('PUT', '/api/memos/' + encodeURIComponent(note.id), {
+              await memoRequest('PUT', '/api/memos/item?id=' + encodeURIComponent(note.id), {
                 title: editTitle.value, body: editBody.value,
               });
               memoFeedback.textContent = '수정 완료';
-              void loadMemos(currentSession, ++notesGeneration);
+              clearProtectedData('수정 완료 · 메모 새로 읽기를 눌러 목록을 확인하세요.');
             } catch (error) { memoFeedback.textContent = error.message; }
             finally { saveEdit.disabled = false; }
           });
@@ -341,9 +344,9 @@
           confirmDelete.addEventListener('click', async () => {
             confirmDelete.disabled = true;
             try {
-              await memoRequest('DELETE', '/api/memos/' + encodeURIComponent(note.id));
+              await memoRequest('DELETE', '/api/memos/item?id=' + encodeURIComponent(note.id));
               memoFeedback.textContent = '삭제 완료';
-              void loadMemos(currentSession, ++notesGeneration);
+              clearProtectedData('삭제 완료 · 메모 새로 읽기를 눌러 목록을 확인하세요.');
             } catch (error) { memoFeedback.textContent = error.message; }
             finally { confirmDelete.disabled = false; }
           });
@@ -378,14 +381,15 @@
         });
         editor.reset();
         memoFeedback.textContent = '추가 완료';
-        void loadMemos(currentSession, ++notesGeneration);
+        clearProtectedData('추가 완료 · 메모 새로 읽기를 눌러 목록을 확인하세요.');
       } catch (error) { memoFeedback.textContent = error.message; }
       finally { add.disabled = false; }
     });
 
     const showError = (message) => { errorText.textContent = message; };
     document.querySelector('#device-connect').addEventListener('click', async () => {
-      if (!currentSession?.user) return;
+      if (!currentSession?.user || !hasApprovedDevice()) return;
+      clearProtectedData('기기를 확인한 뒤 가상 자료를 불러옵니다.');
       await loadMemos(currentSession, ++notesGeneration);
     });
 
@@ -402,10 +406,9 @@
 
       if (signedIn) {
         passwordInput.value = '';
-        await refreshDevices();
+        const approved = await refreshDevices();
         if (sessionGeneration !== authGeneration || currentSession !== session) return;
-        // Device status is informative in Release A; it is not a data-access grant.
-        void loadMemos(session, ++notesGeneration);
+        showNotesMessage(approved ? '승인 기기로 연결을 눌러 메모를 읽으세요.' : '기기를 등록하거나 승인된 기기를 선택한 뒤 연결하세요.');
       }
     };
 

@@ -5,7 +5,7 @@ import { test } from 'node:test';
 
 const baseline = JSON.parse(await readFile(new URL('../package/baseline-functions.json', import.meta.url)));
 
-test('패키징 함수 기준표는 시작 틀의 실제 API와 일치한다', async () => {
+test('패키징 시작 틀 기준표와 구현 프로젝트의 API 목록을 각각 보존한다', async () => {
   const actual = (await readdir(new URL('../api/', import.meta.url)))
     .filter(name => /\.(?:m?js|ts)$/u.test(name))
     .map(name => join('api', name).replaceAll('\\', '/')).sort();
@@ -13,7 +13,15 @@ test('패키징 함수 기준표는 시작 틀의 실제 API와 일치한다', a
   assert.equal(baseline.starter, 'ChoiTimo/aleph-defense-starter');
   assert.deepEqual(baseline.functions, []);
   assert.deepEqual(baseline.allowedNew, ['api/ai.js', 'api/threat-intel.js']);
-  assert.deepEqual(actual, [...baseline.functions, ...baseline.allowedNew].sort());
+  assert.deepEqual(actual, [
+    'api/ai.js',
+    'api/auth.js',
+    'api/devices.js',
+    'api/memos.js',
+    'api/notices.js',
+    'api/restore.js',
+    'api/threat-intel.js',
+  ]);
 });
 
 test('미구현 서버 뼈대는 성공이나 로그인 통과로 가장하지 않는다', async () => {

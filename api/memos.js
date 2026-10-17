@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createLoginVerifier } from '../src/verify-login.mjs';
 import { createRequestTrace } from '../src/request-trace.mjs';
+import { guardDeviceRequest } from '../src/device-gate.mjs';
 
 const require = createRequire(import.meta.url);
 const config = require('../aleph.config.json');
@@ -96,7 +97,7 @@ async function dbRequest(method, params, payload) {
   return { data };
 }
 
-export async function handleMemos(req, res, noteId = null) {
+export async function handleMemos(req, res, noteId = null, { targetValid = true } = {}) {
   const trace = createRequestTrace(req, res, noteId === null ? 'memos_collection' : 'memos_item');
   if (noteId !== null) trace.target(noteId);
   res.setHeader('Cache-Control', 'no-store');
@@ -135,6 +136,7 @@ export async function handleMemos(req, res, noteId = null) {
   if (!identity) {
     return res.status(401).json({ error: 'AUTH_REQUIRED' });
   }
+  if (!(await guardDeviceRequest(req, res, identity, authHeader, config))) return;
 
   const isSingle = noteId !== null;
   const allowed = isSingle ? ['GET', 'PUT', 'DELETE'] : ['GET', 'POST'];
@@ -142,6 +144,7 @@ export async function handleMemos(req, res, noteId = null) {
     res.setHeader('Allow', allowed.join(', '));
     return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
   }
+  if (isSingle && !targetValid) return res.status(400).json({ error: 'INVALID_MEMO_TARGET' });
   if (isSingle && (typeof noteId !== 'string' || !uuidPattern.test(noteId))) {
     return res.status(400).json({ error: 'INVALID_MEMO_ID' });
   }

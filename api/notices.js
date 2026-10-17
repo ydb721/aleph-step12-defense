@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { createLoginVerifier } from '../src/verify-login.mjs';
+import { guardDeviceRequest } from '../src/device-gate.mjs';
 
 const require = createRequire(import.meta.url);
 const config = require('../aleph.config.json');
@@ -99,6 +100,7 @@ export async function handleNotices(req, res, noticeId = null) {
 
   const identity = await verifyLogin(authHeader);
   if (!identity) return res.status(401).json({ error: 'AUTH_REQUIRED' });
+  if (!(await guardDeviceRequest(req, res, identity, authHeader, config))) return;
 
   if (typeof noticeId !== 'string' || !uuidPattern.test(noticeId)) {
     return res.status(400).json({ error: 'INVALID_NOTICE_ID' });
