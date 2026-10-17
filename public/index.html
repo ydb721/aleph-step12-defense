@@ -133,8 +133,9 @@
     </section>
     <section id="operations-room" class="operations-room" hidden aria-labelledby="operations-heading">
       <h2 id="operations-heading">탈환 작전실</h2>
-      <p>승인 기기의 서명된 자료 조회가 성공한 뒤에만 표시합니다. 이 화면은 복원·회수·공격 실행을 수행하지 않습니다.</p>
+      <p>승인 기기의 서명된 자료 조회가 성공한 뒤에만 표시합니다. 복원·회수·상태 변경은 수행하지 않으며, 아래 차단 확인은 쿠키 없는 읽기 전용 GET만 사용합니다.</p>
       <button id="operations-refresh" type="button">작전실 상태 새로 확인</button>
+      <button id="operations-unauthenticated-check" type="button">비로그인 조회 차단 확인</button>
       <p id="operations-feedback" aria-live="polite"></p>
       <ul id="operations-list" aria-live="polite"></ul>
       <section aria-labelledby="verification-heading">

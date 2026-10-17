@@ -9,6 +9,7 @@ import {
 
 const approvedRead = VERIFICATION_CASES.find(value => value.testId === 'approved_signed_memo_list');
 const unsigned = VERIFICATION_CASES.find(value => value.testId === 'unsigned_protected_request');
+const unauthenticated = VERIFICATION_CASES.find(value => value.testId === 'unauthenticated_memo_list');
 
 test('a verification record requires an actual HTTP response and keeps client and server IDs distinct', () => {
   assert.throws(() => recordVerification(approvedRead, {}, { clientCaseId: 'case-1' }), /HTTP_RESPONSE_REQUIRED/u);
@@ -30,6 +31,8 @@ test('normal success and documented prohibited-request rejection have separate p
   assert.deepEqual(compareVerification(unsigned, { httpStatus: 403, errorCode: 'DEVICE_SIGNATURE_REQUIRED' }), { state: 'passed', passed: true });
   assert.deepEqual(compareVerification(unsigned, { httpStatus: 403, errorCode: null }), { state: 'failed', passed: false });
   assert.deepEqual(compareVerification(unsigned, { httpStatus: 503, errorCode: 'DEVICE_SIGNATURE_REQUIRED' }), { state: 'verification_failed', passed: false });
+  assert.deepEqual(compareVerification(unauthenticated, { httpStatus: 401, errorCode: 'AUTH_REQUIRED' }), { state: 'passed', passed: true });
+  assert.deepEqual(compareVerification(unauthenticated, { httpStatus: 401, errorCode: null }), { state: 'failed', passed: false });
 });
 
 test('unexecuted candidates have no record and cannot contribute to a pass count', () => {
@@ -48,7 +51,9 @@ test('verification UI uses generalized paths and clears protected records with t
   assert.match(source, /verificationRecords = \[\]/u);
   assert.match(source, /serverRequestId: safeRequestId/u);
   assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/u);
-  assert.doesNotMatch(source, /fetch\(['"]\/api\/memos/u);
+  assert.match(html, /id="operations-unauthenticated-check"/u);
+  assert.match(source, /fetch\('\/api\/memos', \{\s*method: 'GET', credentials: 'omit'/u);
+  assert.match(source, /통과로 기록하지 않았습니다/u);
   assert.match(procedure, /공식 41종 공격/u);
   assert.match(procedure, /운영에서는 승인 기기의 기존 읽기 전용 자료 조회만/u);
 });

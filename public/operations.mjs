@@ -24,7 +24,7 @@ const SAFE_REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/u;
 const SAFE_SERVER_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u;
 
 export const VERIFICATION_CASES = Object.freeze([
-  { step: 3, testId: 'unauthenticated_memo_list', purpose: '무인증 메모 목록 차단', kind: 'prohibited', environment: 'operational', method: 'GET', path: '/api/memos', expectedStatuses: [401, 403], expectedErrorCodes: [], source: 'src/attack-check.mjs', limitation: '운영에서 자동 실행하지 않음' },
+  { step: 3, testId: 'unauthenticated_memo_list', purpose: '무인증 메모 목록 차단', kind: 'prohibited', environment: 'operational', method: 'GET', path: '/api/memos', expectedStatuses: [401], expectedErrorCodes: ['AUTH_REQUIRED'], source: 'api/memos.js authentication gate', limitation: '사용자가 직접 실행한 credentials omit GET만 기록' },
   { step: 4, testId: 'foreign_memo_scope', purpose: '다른 소유자 메모 범위 차단', kind: 'prohibited', environment: 'isolation', method: 'GET', path: '/api/memos/:id', expectedStatuses: [403, 404], expectedErrorCodes: [], source: 'api/memos.js owner filter', limitation: '대상 소유자·ID를 화면에 기록하지 않음' },
   { step: 5, testId: 'allowed_route_scope', purpose: '허용 API 경로 범위 확인', kind: 'prohibited', environment: 'local', method: 'GET', path: '/api/:unlisted', expectedStatuses: [], expectedErrorCodes: [], source: 'aleph.config.json allowedRoutes', limitation: '공식 HTTP 시험 정의 미확인' },
   { step: 10, testId: 'verified_restore_preview', purpose: '검증된 사본 복원 미리보기', kind: 'normal', environment: 'isolation', method: 'POST', path: '/api/restore/:id', expectedStatuses: [200], expectedErrorCodes: [], source: 'api/restore/[id].js', limitation: '복원 실행 없이 미리보기만 별도 승인 후 수행' },
@@ -175,6 +175,7 @@ function configuredOrigin(manifest) {
 
 export function createOperationsRoom(root) {
   const refresh = root.querySelector('#operations-refresh');
+  const unauthenticatedCheck = root.querySelector('#operations-unauthenticated-check');
   const status = root.querySelector('#operations-feedback');
   const list = root.querySelector('#operations-list');
   const verificationSummary = root.querySelector('#verification-summary');
@@ -371,7 +372,36 @@ export function createOperationsRoom(root) {
     render();
   };
 
+  const verifyUnauthenticatedList = async () => {
+    if (!allowed || unauthenticatedCheck.disabled) return;
+    const definition = VERIFICATION_CASES.find(value => value.testId === 'unauthenticated_memo_list');
+    unauthenticatedCheck.disabled = true;
+    status.textContent = '사용자 요청으로 쿠키 없이 메모 목록 차단을 확인하는 중입니다.';
+    try {
+      const response = await fetch('/api/memos', {
+        method: 'GET', credentials: 'omit', cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => null);
+      addVerification(definition, {
+        httpStatus: response.status,
+        errorCode: payload?.error,
+        serverRequestId: response.headers.get('x-request-id'),
+        environment: window.location.origin === configuredOrigin(manifest) ? 'operational' : 'isolation',
+        source: 'user_requested_credentials_omit_get',
+      });
+      const compared = compareVerification(definition, {
+        httpStatus: response.status, errorCode: safeErrorCode(payload?.error),
+      });
+      status.textContent = compared.passed
+        ? '비로그인 조회 차단을 실제 HTTP 응답으로 확인했습니다.'
+        : '응답을 확인했지만 차단 기준과 일치하지 않습니다. 통과로 기록하지 않았습니다.';
+    } catch {
+      status.textContent = '비로그인 조회를 실행하지 못했습니다. 통과로 기록하지 않았습니다.';
+    } finally { unauthenticatedCheck.disabled = false; }
+  };
+
   refresh.addEventListener('click', () => void refreshSnapshot());
+  unauthenticatedCheck.addEventListener('click', () => void verifyUnauthenticatedList());
   return {
     allow(detail = {}) {
       allowed = true;
@@ -410,6 +440,7 @@ export function createOperationsRoom(root) {
       verificationRecords = [];
       caseSequence = 0;
       refresh.disabled = false;
+      unauthenticatedCheck.disabled = false;
       render();
     },
   };

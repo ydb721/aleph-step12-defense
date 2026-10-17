@@ -62,8 +62,9 @@ test('operations source and UI retain approval gate and avoid protected-content 
   assert.match(ui, /byteback:operations-hidden/u);
   assert.match(ui, /src="\/operations\.mjs"/u);
   assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/u);
-  assert.doesNotMatch(source, /fetch\(['"]\/api\/memos/u,
-    'the operations room may name generalized paths but must not issue a memo fetch');
+  assert.match(source, /fetch\('\/api\/memos', \{\s*method: 'GET', credentials: 'omit'/u,
+    'the only operations memo request is the user-clicked cookie-free GET check');
+  assert.doesNotMatch(source, /fetch\('\/api\/memos', \{\s*method:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/u);
   assert.match(source, /\/api\/devices/u);
   assert.match(source, /requestId: null/u);
 });
