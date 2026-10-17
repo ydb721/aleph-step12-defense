@@ -17,13 +17,15 @@
 
 승인 기기로 연결한 뒤 기존 UI의 서명된 `GET /api/memos`가 HTTP 200과 배열 응답을 모두 확인하면, 작전실은 해당 관찰 한 건을 `approved_signed_memo_list`로 기록한다. 이 동작은 새 요청을 만들지 않고 기존 자료실 조회 결과만 요약한다.
 
+승인된 작전실 화면에서 사용자가 **비로그인 조회 차단 확인**을 직접 누르면 `credentials: 'omit'`인 읽기 전용 `GET /api/memos`를 한 번 보낸다. Authorization 헤더와 요청 본문은 없으며 상태 변경 요청은 하지 않는다. 실제 응답이 정확히 HTTP 401 및 `AUTH_REQUIRED`일 때만 `unauthenticated_memo_list`의 금지 요청 거부로 기록한다. 네트워크 오류, 다른 상태, 다른 오류 코드는 통과가 아니다. 이 기록은 브라우저 메모리에만 있으며 로그아웃·기기 연결 해제 시 지워진다.
+
 `/aleph.json` 및 `/api/devices`의 수동 확인은 작전실의 배포·기기 상태 카드에만 사용한다. 이 응답들은 메모 보호 요청 또는 1~11단계 시험 실행으로 기록하지 않는다.
 
 ## 후보와 출처
 
 | 단계 | 후보 | 종류 | 출처 | 기본 상태 |
 | --- | --- | --- | --- | --- |
-| 3 | unauthenticated_memo_list | 금지 | `src/attack-check.mjs` | 미실행 |
+| 3 | unauthenticated_memo_list | 금지 | `api/memos.js` 인증 게이트 · 사용자 요청 cookie-free GET | 미실행 |
 | 4 | foreign_memo_scope | 금지 | `api/memos.js` 소유자 필터 | 미실행 |
 | 5 | allowed_route_scope | 금지 | `aleph.config.json` 허용 경로 | 시험 정의 미확인 |
 | 10 | verified_restore_preview | 정상 | `api/restore/[id].js` | 미실행 |

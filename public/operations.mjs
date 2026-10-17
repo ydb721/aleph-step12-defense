@@ -187,6 +187,9 @@ export function createOperationsRoom(root) {
   let manifestLoad = null;
   let caseSequence = 0;
   let verificationRecords = [];
+  let generation = 0;
+
+  const isCurrent = value => allowed && generation === value;
 
   const renderVerification = () => {
     const byTestId = new Map(verificationRecords.map(record => [record.testId, record]));
@@ -305,6 +308,7 @@ export function createOperationsRoom(root) {
   };
 
   const loadManifest = async () => {
+    if (manifest) return manifest;
     if (manifestLoad) return manifestLoad;
     manifestLoad = (async () => {
       try {
@@ -314,11 +318,11 @@ export function createOperationsRoom(root) {
         const payload = await response.json().catch(() => null);
         if (!response.ok) throw new Error('HTTP_' + response.status);
         manifest = validateManifest(payload);
+        return manifest;
       } catch {
-        status.textContent = '작전실 구현 요약을 검증하지 못했습니다.';
+        return null;
       } finally {
         manifestLoad = null;
-        render();
       }
     })();
     return manifestLoad;
@@ -326,6 +330,7 @@ export function createOperationsRoom(root) {
 
   const refreshSnapshot = async () => {
     if (!allowed || !manifest || refresh.disabled) return;
+    const requestGeneration = generation;
     refresh.disabled = true;
     status.textContent = '사용자 요청으로 현재 상태를 확인하는 중입니다.';
     const checkedAt = new Date().toISOString();
@@ -333,15 +338,20 @@ export function createOperationsRoom(root) {
       fetch('/aleph.json', { credentials: 'omit', cache: 'no-store', redirect: 'error' }),
       fetch('/api/devices', { credentials: 'same-origin', cache: 'no-store', redirect: 'error' }),
     ]);
+    if (!isCurrent(requestGeneration)) return;
+    const [alephPayload, devicesPayload] = await Promise.all([
+      aleph.status === 'fulfilled' && aleph.value.ok ? aleph.value.json().catch(() => null) : null,
+      devices.status === 'fulfilled' && devices.value.ok ? devices.value.json().catch(() => null) : null,
+    ]);
+    if (!isCurrent(requestGeneration)) return;
     snapshot = {};
 
     if (aleph.status === 'fulfilled' && aleph.value.ok) {
-      const payload = await aleph.value.json().catch(() => null);
-      if (Number.isInteger(payload?.step) && SHA.test(payload?.commit ?? '')) {
+      if (Number.isInteger(alephPayload?.step) && SHA.test(alephPayload?.commit ?? '')) {
         snapshot.aleph = {
           status: window.location.origin === configuredOrigin(manifest)
             ? STATUS.operationalObserved : STATUS.deploymentObserved,
-          details: ['step ' + payload.step, '커밋 ' + payload.commit.slice(0, 12), timestamp(checkedAt), '서버 제공 요청 ID 없음'],
+          details: ['step ' + alephPayload.step, '커밋 ' + alephPayload.commit.slice(0, 12), timestamp(checkedAt), '서버 제공 요청 ID 없음'],
         };
       } else snapshot.aleph = { ...operationFailure(aleph.value.status), details: ['응답 형식 검증 실패', timestamp(checkedAt)] };
     } else {
@@ -350,9 +360,8 @@ export function createOperationsRoom(root) {
     }
 
     if (devices.status === 'fulfilled' && devices.value.ok) {
-      const payload = await devices.value.json().catch(() => null);
       try {
-        const summary = summarizeDevices(payload);
+        const summary = summarizeDevices(devicesPayload);
         snapshot.devices = {
           status: window.location.origin === configuredOrigin(manifest)
             ? STATUS.operationalObserved : STATUS.deploymentObserved,
@@ -374,6 +383,7 @@ export function createOperationsRoom(root) {
 
   const verifyUnauthenticatedList = async () => {
     if (!allowed || unauthenticatedCheck.disabled) return;
+    const requestGeneration = generation;
     const definition = VERIFICATION_CASES.find(value => value.testId === 'unauthenticated_memo_list');
     unauthenticatedCheck.disabled = true;
     status.textContent = '사용자 요청으로 쿠키 없이 메모 목록 차단을 확인하는 중입니다.';
@@ -381,7 +391,9 @@ export function createOperationsRoom(root) {
       const response = await fetch('/api/memos', {
         method: 'GET', credentials: 'omit', cache: 'no-store',
       });
+      if (!isCurrent(requestGeneration)) return;
       const payload = await response.json().catch(() => null);
+      if (!isCurrent(requestGeneration)) return;
       addVerification(definition, {
         httpStatus: response.status,
         errorCode: payload?.error,
@@ -396,15 +408,26 @@ export function createOperationsRoom(root) {
         ? '비로그인 조회 차단을 실제 HTTP 응답으로 확인했습니다.'
         : '응답을 확인했지만 차단 기준과 일치하지 않습니다. 통과로 기록하지 않았습니다.';
     } catch {
-      status.textContent = '비로그인 조회를 실행하지 못했습니다. 통과로 기록하지 않았습니다.';
-    } finally { unauthenticatedCheck.disabled = false; }
+      if (isCurrent(requestGeneration)) {
+        status.textContent = '비로그인 조회를 실행하지 못했습니다. 통과로 기록하지 않았습니다.';
+      }
+    } finally {
+      if (isCurrent(requestGeneration)) unauthenticatedCheck.disabled = false;
+    }
   };
 
   refresh.addEventListener('click', () => void refreshSnapshot());
   unauthenticatedCheck.addEventListener('click', () => void verifyUnauthenticatedList());
   return {
     allow(detail = {}) {
+      const allowGeneration = ++generation;
       allowed = true;
+      protectedRead = null;
+      snapshot = null;
+      verificationRecords = [];
+      caseSequence = 0;
+      refresh.disabled = false;
+      unauthenticatedCheck.disabled = false;
       protectedRead = protectedReadObservation({
         httpStatus: detail.httpStatus,
         checkedAt: detail.checkedAt,
@@ -412,28 +435,33 @@ export function createOperationsRoom(root) {
         configuredOrigin: configuredOrigin(manifest),
       });
       render();
-      void loadManifest().then(() => {
-        if (allowed) {
-          protectedRead = protectedReadObservation({
-            httpStatus: detail.httpStatus, checkedAt: detail.checkedAt,
-            origin: window.location.origin, configuredOrigin: configuredOrigin(manifest),
-          });
+      void loadManifest().then(loadedManifest => {
+        if (!isCurrent(allowGeneration)) return;
+        if (!loadedManifest) {
+          status.textContent = '작전실 구현 요약을 검증하지 못했습니다.';
           render();
-          if (Number.isInteger(detail.httpStatus)) {
-            addVerification(VERIFICATION_CASES.find(value => value.testId === 'approved_signed_memo_list'), {
-              httpStatus: detail.httpStatus,
-              errorCode: null,
-              serverRequestId: detail.serverRequestId,
-              serverObservedAt: detail.serverObservedAt,
-              executedAt: detail.checkedAt,
-              environment: window.location.origin === configuredOrigin(manifest) ? 'operational' : 'isolation',
-              source: 'approved_signed_fetch',
-            });
-          }
+          return;
+        }
+        protectedRead = protectedReadObservation({
+          httpStatus: detail.httpStatus, checkedAt: detail.checkedAt,
+          origin: window.location.origin, configuredOrigin: configuredOrigin(manifest),
+        });
+        render();
+        if (Number.isInteger(detail.httpStatus)) {
+          addVerification(VERIFICATION_CASES.find(value => value.testId === 'approved_signed_memo_list'), {
+            httpStatus: detail.httpStatus,
+            errorCode: null,
+            serverRequestId: detail.serverRequestId,
+            serverObservedAt: detail.serverObservedAt,
+            executedAt: detail.checkedAt,
+            environment: window.location.origin === configuredOrigin(manifest) ? 'operational' : 'isolation',
+            source: 'approved_signed_fetch',
+          });
         }
       });
     },
     clear() {
+      ++generation;
       allowed = false;
       protectedRead = null;
       snapshot = null;
