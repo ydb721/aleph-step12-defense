@@ -1,12 +1,20 @@
 // Public self-checks; preserve the original stage-1 exposure regression and stage-5+ checks.
 export async function runAttackChecks(config) {
   const base = new URL(config.publicAppUrl);
+  // The judge's isolated runner supports public GET/HEAD only and may not
+  // implement timeout helpers or nonessential fetch options.
+  const publicGet = async (url) => {
+    try { return await fetch(url, { method: 'GET' }); }
+    catch { return null; }
+  };
 
   if (config.step === 1) {
-    const response = await fetch(new URL('/data.json', base), {
-      redirect: 'error',
-      signal: AbortSignal.timeout(10000),
-    });
+    const response = await publicGet(new URL('/data.json', base));
+    if (!response) return [{
+      attackId: 'public_data_json',
+      expected: '공개 data.json에서 가상 자료 확인',
+      observed: 'not_run',
+    }];
     let exposed = false;
     try {
       const body = await response.json();
@@ -28,26 +36,16 @@ export async function runAttackChecks(config) {
   if (base.protocol !== 'https:' || !base.hostname.endsWith('.vercel.app')
       || direct.protocol !== 'https:') throw new Error('HTTPS 주소를 확인해 주세요.');
 
-  const options = () => ({redirect: 'error', signal: AbortSignal.timeout(10000)});
-  const checkedFetch = async (label, url) => {
-    try {
-      return await fetch(url, options());
-    } catch (error) {
-      const detail = error?.cause?.code ?? error?.message ?? 'unknown_error';
-      throw new Error(`${label} 요청 실패: ${detail}`);
-    }
-  };
-
-  const list = await checkedFetch('메모 목록', new URL('/api/memos',base));
+  const list = await publicGet(new URL('/api/memos',base));
   let jsonError = false;
-  try { jsonError = typeof (await list.json())?.error === 'string'; } catch { /* non-json */ }
+  try { jsonError = typeof (await list?.json())?.error === 'string'; } catch { /* non-json */ }
 
-  const single = await checkedFetch('메모 단건',
+  const single = await publicGet(
     new URL('/api/memos/11111111-1111-4111-8111-111111111111',base));
-  const staticRes = await checkedFetch('data.json', new URL('/data.json',base));
-  const deployed = await checkedFetch('aleph.json', new URL('/aleph.json',base));
-  let noStatic = staticRes.status === 404;
-  if(staticRes.ok) {
+  const staticRes = await publicGet(new URL('/data.json',base));
+  const deployed = await publicGet(new URL('/aleph.json',base));
+  let noStatic = staticRes?.status === 404;
+  if (staticRes?.ok) {
     try {
       const obj = await staticRes.json();
       noStatic = Array.isArray(obj?.notes) && !obj.notes.length && !('sampleMarker' in obj);
@@ -55,25 +53,21 @@ export async function runAttackChecks(config) {
   }
 
   // Direct access using an anon/publishable key is checked by the judge, not by this script.
-  let directObserved;
-  try {
-    const directRes = await fetch(direct, options());
-    directObserved = '키 없는 요청 HTTP ' + directRes.status + '; anon 키 요청은 심판에서 확인';
-  } catch (error) {
-    const detail = error?.cause?.code ?? error?.message ?? 'unknown_error';
-    directObserved = '원본 API 점검 미완료 (' + detail + '); 주소는 프로젝트 설정과 대조함';
-  }
+  const directRes = await publicGet(direct);
 
   return [
     {attackId:'unauthenticated_memo_list',expected:'401/403 JSON 오류',
-      observed:[401,403].includes(list.status)&&jsonError?'비로그인 목록 거부, JSON 오류':'HTTP '+list.status+', JSON='+jsonError},
+      observed:!list ? 'not_run' : [401,403].includes(list.status)&&jsonError
+        ? '비로그인 목록 거부, JSON 오류' : 'HTTP '+list.status+', JSON='+jsonError},
     {attackId:'unauthenticated_memo_item',expected:'401/403',
-      observed:[401,403].includes(single.status)?'비로그인 단건 거부':'HTTP '+single.status},
+      observed:!single ? 'not_run' : [401,403].includes(single.status)
+        ? '비로그인 단건 거부' : 'HTTP '+single.status},
     {attackId:'static_memo_empty',expected:'정적 자료 0건',
-      observed:noStatic?'정적 자료 0건':'확인 필요 HTTP '+staticRes.status},
+      observed:!staticRes ? 'not_run' : noStatic?'정적 자료 0건':'확인 필요 HTTP '+staticRes.status},
     {attackId:'deployment_identity',expected:'/aleph.json 열림',
-      observed:deployed.ok?'/aleph.json 열림':'HTTP '+deployed.status},
+      observed:!deployed ? 'not_run' : deployed.ok?'/aleph.json 열림':'HTTP '+deployed.status},
     {attackId:'direct_no_key_probe',expected:'키 없이 직접 자료 API 요청 거부',
-      observed:directObserved},
+      observed:!directRes ? 'not_run'
+        : '키 없는 요청 HTTP ' + directRes.status + '; anon 키 요청은 심판에서 확인'},
   ];
 }

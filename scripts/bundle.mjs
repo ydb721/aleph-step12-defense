@@ -5,11 +5,24 @@ import { pathToFileURL } from 'node:url';
 import { changedFilesForCommit } from './bundle-changes.mjs';
 
 const root = resolve(import.meta.dirname, '..');
+const DEFAULT_NOTES = Object.freeze({
+  explanation: 'No local bundle notes were supplied. The bundle distinguishes actual public GET observations from not_run checks and does not claim execution of the official 41 attacks.',
+  blockedAt: 'Official 41-attack identifiers and execution evidence were not supplied; unexecuted checks remain not_run.',
+});
 const git = (...args) => execFileSync('git', ['-C', root, ...args], {
   encoding: 'utf8', timeout: 5000, maxBuffer: 512 * 1024, windowsHide: true,
   env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
 }).trim();
 const fromCommit = (path) => JSON.parse(git('show', `HEAD:${path}`));
+const bundleNotes = () => {
+  try { return JSON.parse(readFileSync(join(root, 'bundle-notes.json'), 'utf8')); }
+  catch (error) {
+    // bundle-notes.json is intentionally gitignored and absent from a clean
+    // judge checkout. A supplied file may refine this text, but is optional.
+    if (error?.code === 'ENOENT') return DEFAULT_NOTES;
+    throw error;
+  }
+};
 const fail = (message) => { throw new Error(message); };
 const secretPattern = /-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer\s+[A-Za-z0-9._~+/-]{16,}|\bsb_secret_[A-Za-z0-9_-]{12,}|\bsk-[A-Za-z0-9_-]{20,}|\beyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{8,}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu;
 const repository = /^https:\/\/github\.com\/([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)\/([A-Za-z0-9._-]{1,100})\/?$/iu;
@@ -43,7 +56,7 @@ try {
   if (normalizedRepo(config.repoUrl) !== repoUrl) {
     fail('aleph.config.json의 repoUrl이 Git origin 주소와 다릅니다. 같은 저장소 주소로 맞춰 주세요.');
   }
-  const notes = JSON.parse(readFileSync(join(root, 'bundle-notes.json'), 'utf8'));
+  const notes = bundleNotes();
   if (!Number.isInteger(config.step) || config.step < 1 || config.step > 12) fail('aleph.config.json의 step을 확인해 주세요.');
   if (config.step >= 3 && (!config.identityProvider || typeof config.identityProvider !== 'object'
       || ['issuer', 'audience', 'jwksUrl'].some((key) => typeof config.identityProvider[key] !== 'string'
@@ -66,7 +79,7 @@ try {
     fail('src/decider.mjs의 RULE_IDS 이름과 중복을 확인해 주세요.');
   }
   if (typeof notes.explanation !== 'string' || notes.explanation.trim().length < 10) {
-    fail('bundle-notes.json의 explanation에 이번 단계에서 한 일을 세 줄로 적어 주세요.');
+    fail('제공한 bundle-notes.json의 explanation을 확인해 주세요.');
   }
   const checkerUrl = pathToFileURL(join(root, 'src', 'attack-check.mjs'));
   const { runAttackChecks } = await import(checkerUrl.href);

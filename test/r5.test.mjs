@@ -46,13 +46,33 @@ test('first attack check reads public data.json without credentials', async () =
     };
     const [result] = await runAttackChecks(config);
     assert.equal(requestUrl, 'https://student-defense.vercel.app/data.json');
-    assert.equal(options.redirect, 'error');
+    assert.deepEqual(options, { method: 'GET' });
     assert.match(result.observed, /확인 표시가 보임/u);
     globalThis.fetch = async () => new Response('<html>not the data</html>', { status: 200 });
     const [failed] = await runAttackChecks(config);
     assert.match(failed.observed, /보이지 않음/u);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('isolated bundle checks use only GET and mark failed network requests as not_run', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalTimeout = AbortSignal.timeout;
+  const runtimeConfig = { ...config, step: 12,
+    originalApiUrl: 'https://fixture.supabase.co/rest/v1/memos' };
+  try {
+    AbortSignal.timeout = undefined;
+    globalThis.fetch = async (_url, init) => {
+      assert.deepEqual(init, { method: 'GET' });
+      throw new TypeError('isolated network unavailable');
+    };
+    const results = await runAttackChecks(runtimeConfig);
+    assert.equal(results.length, 5);
+    assert.ok(results.every(result => result.observed === 'not_run'));
+  } finally {
+    globalThis.fetch = originalFetch;
+    AbortSignal.timeout = originalTimeout;
   }
 });
 
