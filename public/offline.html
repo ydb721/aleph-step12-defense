@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101a28">
+  <meta name="robots" content="noindex">
+  <title>연결 대기 | BYTE BACK</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; min-height: 100dvh; background: #101a28; color: #ecf4ff; }
+    main { max-width: 760px; margin: 0 auto; padding: 44px 22px 64px; }
+    .eyebrow { margin: 0; color: #8ad8df; font-size: 14px; font-weight: 700; letter-spacing: .08em; }
+    h1 { margin: 16px 0; font-size: clamp(30px, 7vw, 48px); line-height: 1.2; overflow-wrap: anywhere; }
+    p { color: #bfd0e5; font-size: 17px; line-height: 1.7; }
+    .notice { margin: 26px 0; padding: 18px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
+    .notice p { margin: 0; }
+    .notice p + p { margin-top: 14px; }
+    .detail { font-size: 14px; }
+    .retry { display: inline-block; max-width: 100%; padding: 13px 20px; border-radius: 8px; background: #8ad8df; color: #101a28; font-weight: 700; text-decoration: none; line-height: 1.5; }
+    .retry:focus-visible { outline: 3px solid #ecf4ff; outline-offset: 5px; }
+    @media (max-width: 420px) { main { padding-top: 32px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">BYTE BACK · 연결 대기</p>
+    <h1>네트워크 연결이 필요합니다</h1>
+    <p>보호 자료는 오프라인에서 열람할 수 없습니다. 연결 상태를 확인한 뒤 자료실을 다시 열어 주세요.</p>
+    <div class="notice">
+      <p>네트워크가 복구된 후에는 다시 로그인하여 인증해야 할 수 있습니다.</p>
+      <p>앱 설치와 자료 접근 승인은 별개입니다. 설치만으로 보호 자료 접근이 허용되지 않습니다.</p>
+    </div>
+    <a class="retry" href="/">자료실 다시 열기</a>
+    <p class="detail">오프라인에서는 서버의 기기 승인 상태와 요청 서명을 확인할 수 없으므로, 연결 후 로그인하고 승인 기기로 다시 연결하세요.</p>
+  </main>
+</body>
+</html>

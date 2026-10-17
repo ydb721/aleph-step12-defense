@@ -9,6 +9,19 @@ const config = JSON.parse(await readFile(resolve(root, 'aleph.config.json'), 'ut
 
 await mkdir(resolve(root, 'public'), { recursive: true });
 
+// A pinned local browser library; no CDN execution or private credentials.
+const browserPackage = resolve(root, 'node_modules', '@simplewebauthn', 'browser');
+const browserMetadata = JSON.parse(await readFile(resolve(browserPackage, 'package.json'), 'utf8'));
+if (browserMetadata.version !== '14.0.0') throw new Error('Unexpected WebAuthn browser library version');
+const vendor = resolve(root, 'public', 'vendor');
+await mkdir(vendor, { recursive: true });
+await copyFile(resolve(browserPackage, 'dist', 'bundle', 'index.umd.min.js'),
+  resolve(vendor, 'simplewebauthn-browser.umd.js'));
+await copyFile(resolve(browserPackage, 'LICENSE.md'), resolve(vendor, 'simplewebauthn-LICENSE.md'));
+await writeFile(resolve(vendor, 'simplewebauthn-browser.js'),
+  "import './simplewebauthn-browser.umd.js';\n"
+    + 'export const { startRegistration, startAuthentication } = window.SimpleWebAuthnBrowser;\n', 'utf8');
+
 if (config.step === 1) {
   const data = JSON.parse(await readFile(source, 'utf8'));
   if (!Array.isArray(data.notes)) {

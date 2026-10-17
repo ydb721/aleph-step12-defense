@@ -14,12 +14,20 @@
     "policy:diff": "node scripts/policy-diff.mjs",
     "policy:restore": "node scripts/policy-restore.mjs",
     "policy:test": "node --test test/step10-policy-recovery.test.mjs",
-    "recovery:test": "node --experimental-vm-modules --test test/step10-memo-api.test.mjs test/request-trace.test.mjs"
+    "recovery:test": "node --experimental-vm-modules --test test/step10-memo-api.test.mjs test/request-trace.test.mjs",
+    "decider": "npm run decider:test",
+    "detect": "npm run detect:test",
+    "recovery": "npm run recovery:test",
+    "policy": "npm run policy:test",
+    "device:test": "node --experimental-vm-modules --test test/step11-device-auth.test.mjs test/step11-device-ui.test.mjs test/step11-raw-restore.test.mjs",
+    "pwa:test": "node --experimental-vm-modules --test test/step11-pwa.test.mjs"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "14.0.0",
+    "@simplewebauthn/server": "14.0.3",
     "@supabase/supabase-js": "2.117.2",
     "jose": "6.2.12"
   }

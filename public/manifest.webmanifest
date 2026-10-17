@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "BYTE BACK 보호 자료실",
+  "short_name": "BYTE BACK",
+  "description": "로그인 후 보호된 가상 자료를 열람하고 복원하는 자료실",
+  "lang": "ko",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#101a28",
+  "background_color": "#101a28",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
