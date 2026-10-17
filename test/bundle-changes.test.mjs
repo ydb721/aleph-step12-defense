@@ -8,25 +8,33 @@ import { changedFilesForCommit } from '../scripts/bundle-changes.mjs';
 
 test('submission records root, ordinary and merged changes against the first parent', () => {
   const root = mkdtempSync(join(tmpdir(), 'bundle-changes-'));
+  const bundleCalls = [];
   const git = (...args) => execFileSync('git', ['-C', root, ...args], {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
+  const bundleGit = (...args) => {
+    bundleCalls.push(args);
+    return git(...args);
+  };
   try {
     git('init', '-b', 'main');
     git('config', 'user.name', 'Fixture');
     git('config', 'user.email', 'fixture@invalid.test');
     writeFileSync(join(root, 'baseline.txt'), 'baseline');
     git('add', '.'); git('commit', '-m', 'root');
-    assert.deepEqual(changedFilesForCommit(git, git('rev-parse', 'HEAD')), ['baseline.txt']);
+    assert.deepEqual(changedFilesForCommit(bundleGit, git('rev-parse', 'HEAD')), ['baseline.txt']);
     git('checkout', '-b', 'recovery');
     writeFileSync(join(root, 'recovery.txt'), 'recovery');
     git('add', '.'); git('commit', '-m', 'recovery');
-    assert.deepEqual(changedFilesForCommit(git, git('rev-parse', 'HEAD')), ['recovery.txt']);
+    assert.deepEqual(changedFilesForCommit(bundleGit, git('rev-parse', 'HEAD')), ['recovery.txt']);
     git('checkout', 'main');
     writeFileSync(join(root, 'other.txt'), 'other work');
     git('add', '.'); git('commit', '-m', 'other work');
     git('merge', '--no-ff', 'recovery', '-m', 'merge recovery');
-    assert.deepEqual(changedFilesForCommit(git, git('rev-parse', 'HEAD')), ['recovery.txt']);
+    assert.deepEqual(changedFilesForCommit(bundleGit, git('rev-parse', 'HEAD')), ['recovery.txt']);
     assert.equal(git('show', 'HEAD:other.txt'), 'other work');
+    assert.equal(bundleCalls.length, 3);
+    assert.ok(bundleCalls.every(args => args[0] === 'show'
+      && args.slice(1, -1).join(',') === '--first-parent,--format=,--name-only,--no-renames'));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
