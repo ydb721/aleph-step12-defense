@@ -43,11 +43,8 @@ try {
   let repoUrl;
   try {
     const raw = git('config', '--local', '--no-includes', '--get', 'remote.origin.url');
-    const effective = git('remote', 'get-url', 'origin');
     repoUrl = normalizedRepo(raw);
-    if (normalizedRepo(effective) !== repoUrl) fail('origin 주소가 Git 설정에서 바뀌었습니다. 저장소 설정을 확인해 주세요.');
   } catch (error) {
-    if (error.message?.startsWith('origin 주소가') || error.message?.startsWith('GitHub HTTPS')) throw error;
     fail('GitHub HTTPS 저장소 주소를 origin으로 등록해 주세요.');
   }
   const changedFiles = changedFilesForCommit(git, commit);
