@@ -51,6 +51,9 @@ async function runtimePaths(root, directory) {
       const name = posix(path + '/' + entry.name);
       if (entry.isSymbolicLink()) fail('HTTPS_SNAPSHOT_LINK_NOT_ALLOWED');
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      // build-public writes this deployment-specific public summary from the
+      // verified source and trial configuration. It is not snapshot input.
+      if (name === 'public/operations-manifest.json') continue;
       if (entry.isDirectory()) { await visit(name); continue; }
       if (!entry.isFile()) fail('HTTPS_SNAPSHOT_INVALID_SOURCE');
       if (name === 'public/aleph.json' || name === 'public/data.json') continue;
@@ -109,7 +112,10 @@ async function verifySnapshot() {
     for (const entry of await readdir(resolve(root, directory), { withFileTypes: true })) {
       const path = directory + '/' + entry.name;
       if (entry.isSymbolicLink()) throw new Error('HTTPS_SNAPSHOT_CHANGED');
-      if (path === 'public/aleph.json') continue;
+      // These are regenerated after the immutable source receipt has been
+      // verified. Do not make a deployment-specific public artifact part of
+      // the source fingerprint.
+      if (path === 'public/aleph.json' || path === 'public/operations-manifest.json') continue;
       if (entry.isDirectory()) { await walk(path); continue; }
       if (!entry.isFile() || !expected.has(path)) throw new Error('HTTPS_SNAPSHOT_CHANGED');
     }

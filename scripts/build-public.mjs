@@ -1,13 +1,64 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { deploymentIdentity } from './deployment-identity.mjs';
+import { RULE_IDS } from '../src/decider.mjs';
+import { DETECTION_CONTRACT } from '../src/detect.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const source = resolve(root, 'data.json');
 const output = resolve(root, 'public', 'data.json');
 const config = JSON.parse(await readFile(resolve(root, 'aleph.config.json'), 'utf8'));
+let safePolicy = null;
+try {
+  safePolicy = JSON.parse(await readFile(resolve(root, 'policy', 'safe-policy.json'), 'utf8'));
+} catch (error) {
+  // The isolated HTTPS snapshot intentionally excludes policy files. It can
+  // still build its public operations summary, but must not claim a version.
+  if (error?.code !== 'ENOENT') throw error;
+}
 
 await mkdir(resolve(root, 'public'), { recursive: true });
+
+// This is deliberately implementation metadata only. It never records a
+// browser request, WebAuthn proof, device identifier, memo, backup, or judge
+// response. Runtime observations are added only in browser memory.
+const operationsManifest = {
+  schema: 'byteback.operations-room.v1',
+  deployment: {
+    step: config.step,
+    publicOrigin: config.publicAppUrl,
+  },
+  implementation: {
+    decider: {
+      ruleIds: [...RULE_IDS],
+      outcomes: ['allow', 'deny', 'step_up'],
+      source: 'src/decider.mjs',
+    },
+    detection: {
+      ...DETECTION_CONTRACT,
+      source: 'src/detect.mjs',
+    },
+    recovery: {
+      memoRoute: config.restoreRoute,
+      policyVersion: safePolicy?.policy?.version ?? null,
+      source: 'api/restore/[id].js and src/recovery/policy.mjs',
+    },
+  },
+  judgeRecord: {
+    status: 'user_reported',
+    step: 11,
+    score: 100,
+    commit: 'e2b71097b641bccb8430c898cf65d416b569bd41',
+    evidence: 'user_provided_screenshot',
+  },
+  attackCatalog: {
+    expectedCount: 41,
+    officialIdentifiersAvailable: false,
+    executions: [],
+  },
+};
+await writeFile(resolve(root, 'public', 'operations-manifest.json'),
+  `${JSON.stringify(operationsManifest, null, 2)}\n`, 'utf8');
 
 // A pinned local browser library; no CDN execution or private credentials.
 const browserPackage = resolve(root, 'node_modules', '@simplewebauthn', 'browser');

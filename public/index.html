@@ -47,6 +47,19 @@
     .device-box button { margin: 4px 8px 4px 0; }
     #device-feedback { color: #ffe9d4; }
     .network-status { color: #ffe9d4; }
+    .operations-room { margin: 24px 0; padding: 20px; border: 1px solid #51667c; border-radius: 14px; background: #142235; }
+    .operations-room h2 { margin: 0 0 12px; font-size: 20px; }
+    .operations-room > button { padding: 11px 16px; min-height: 44px; font: inherit; border: 0; border-radius: 8px; background: #8ad8df; color: #101a28; cursor: pointer; }
+    .operations-room > button:disabled { opacity: .6; cursor: wait; }
+    .operations-card { display: grid; gap: 7px; }
+    .operations-card p { margin: 0; font-size: 14px; }
+    .operations-status { display: inline-block; width: fit-content; padding: 4px 8px; border: 1px solid #51667c; border-radius: 999px; font-size: 13px; }
+    #operations-feedback { min-height: 1.5em; font-size: 14px; }
+    .verification-scroll { overflow-x: auto; border: 1px solid #51667c; border-radius: 10px; }
+    .verification-table { width: 100%; min-width: 1180px; border-collapse: collapse; font-size: 13px; }
+    .verification-table th, .verification-table td { padding: 9px; vertical-align: top; text-align: left; border-bottom: 1px solid #51667c; overflow-wrap: anywhere; }
+    .verification-table th { color: #8ad8df; }
+    .verification-table td { color: #bfd0e5; }
     @media (max-width: 480px) { main { padding: 24px 16px 40px; } .memo-actions button { min-height: 44px; } }
   </style>
 </head>
@@ -118,6 +131,23 @@
       </div>
       <p id="recovery-feedback" aria-live="polite"></p>
     </section>
+    <section id="operations-room" class="operations-room" hidden aria-labelledby="operations-heading">
+      <h2 id="operations-heading">탈환 작전실</h2>
+      <p>승인 기기의 서명된 자료 조회가 성공한 뒤에만 표시합니다. 이 화면은 복원·회수·공격 실행을 수행하지 않습니다.</p>
+      <button id="operations-refresh" type="button">작전실 상태 새로 확인</button>
+      <p id="operations-feedback" aria-live="polite"></p>
+      <ul id="operations-list" aria-live="polite"></ul>
+      <section aria-labelledby="verification-heading">
+        <h3 id="verification-heading">1~11단계 통합 검증</h3>
+        <p id="verification-summary" aria-live="polite">실제 HTTP 응답을 확인한 기록만 표에 추가합니다.</p>
+        <div class="verification-scroll">
+          <table class="verification-table">
+            <thead><tr><th>단계·시험</th><th>구분·목적</th><th>환경·경로</th><th>기대 결과</th><th>실제 결과</th><th>요청 ID·시각</th><th>출처·상태</th><th>근거·한계</th></tr></thead>
+            <tbody id="verification-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
     <ul id="notes" aria-live="polite"><li>메모를 보려면 로그인하세요.</li></ul>
   </main>
 
@@ -142,6 +172,10 @@
     let currentSession = null;
     let deviceReady = false;
     let authGeneration = 0;
+    const dispatchOperationsEvent = (type, detail) => {
+      if (typeof CustomEvent !== 'function') return;
+      window.dispatchEvent(new CustomEvent(type, { detail }));
+    };
     const memoRequest = async (method, path, input) => {
       if (!currentSession?.user) throw new Error('로그인이 필요합니다.');
       if (!deviceReady || !hasApprovedDevice()) throw new Error('승인 기기로 연결한 뒤 다시 시도하세요.');
@@ -237,6 +271,7 @@
     const clearProtectedData = (message) => {
       ++notesGeneration;
       deviceReady = false;
+      dispatchOperationsEvent('byteback:operations-hidden');
       editor.hidden = true;
       recoveryPanel.hidden = true;
       editor.reset();
@@ -266,6 +301,10 @@
         if (generation !== notesGeneration) return;
         if (session !== currentSession || !hasApprovedDevice()) return;
         deviceReady = true;
+        dispatchOperationsEvent('byteback:operations-access', {
+          httpStatus: response.status,
+          checkedAt: new Date().toISOString(),
+        });
         editor.hidden = false;
         recoveryPanel.hidden = false;
         memoFeedback.textContent = '메모 조회 성공 · ' + data.length + '건';
@@ -473,6 +512,7 @@
     });
 
   </script>
+  <script type="module" src="/operations.mjs"></script>
   <script type="module" src="/pwa.mjs"></script>
 </body>
 </html>

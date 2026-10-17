@@ -19,8 +19,17 @@
     "detect": "npm run detect:test",
     "recovery": "npm run recovery:test",
     "policy": "npm run policy:test",
+    "documentation": "npm run documentation:test",
+    "operations": "npm run operations:test",
+    "verification": "npm run verification:test",
+    "device": "npm run device:test",
+    "pwa": "npm run pwa:test",
+    "test": "node --experimental-vm-modules --test test/*.test.mjs",
     "device:test": "node --experimental-vm-modules --test test/step11-device-auth.test.mjs test/step11-device-ui.test.mjs test/step11-raw-restore.test.mjs",
-    "pwa:test": "node --experimental-vm-modules --test test/step11-pwa.test.mjs"
+    "pwa:test": "node --experimental-vm-modules --test test/step11-pwa.test.mjs",
+    "operations:test": "node --test test/step12-operations.test.mjs",
+    "verification:test": "node --test test/step12-verification.test.mjs",
+    "documentation:test": "node --test test/step12-documentation.test.mjs"
   },
   "engines": {
     "node": ">=22"

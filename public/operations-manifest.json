@@ -1,0 +1,47 @@
+{
+  "schema": "byteback.operations-room.v1",
+  "deployment": {
+    "step": 12,
+    "publicOrigin": "https://choi-bujang-secret-vault-pink.vercel.app"
+  },
+  "implementation": {
+    "decider": {
+      "ruleIds": [
+        "device_registered",
+        "step_up_required",
+        "resource_scope"
+      ],
+      "outcomes": [
+        "allow",
+        "deny",
+        "step_up"
+      ],
+      "source": "src/decider.mjs"
+    },
+    "detection": {
+      "windowSeconds": 600,
+      "readLimit": 120,
+      "method": "GET",
+      "action": "propose_revocation",
+      "reasonCode": "burst_read",
+      "source": "src/detect.mjs"
+    },
+    "recovery": {
+      "memoRoute": "/api/restore/:id",
+      "policyVersion": "stage9_verified",
+      "source": "api/restore/[id].js and src/recovery/policy.mjs"
+    }
+  },
+  "judgeRecord": {
+    "status": "user_reported",
+    "step": 11,
+    "score": 100,
+    "commit": "e2b71097b641bccb8430c898cf65d416b569bd41",
+    "evidence": "user_provided_screenshot"
+  },
+  "attackCatalog": {
+    "expectedCount": 41,
+    "officialIdentifiersAvailable": false,
+    "executions": []
+  }
+}

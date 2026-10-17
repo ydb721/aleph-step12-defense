@@ -1,6 +1,75 @@
 # BYTE BACK 보호 자료실
 
-## 현재 판정 현황 (2026-10-15)
+## 현재 확정 상태 (2026-10-18)
+
+- 운영 저장소: https://github.com/ydb721/choi-bujang-secret-vault / 운영 배포: https://choi-bujang-secret-vault-pink.vercel.app
+- 10단계 100/100 및 11단계 100/100은 사용자가 제공한 심판 결과 스크린샷으로 확인한 기록입니다. 11단계 최종 검증 커밋은 `e2b71097b641bccb8430c898cf65d416b569bd41`입니다.
+- Release A/B 운영 배포 완료와 Vercel Serverless Function 12개는 사용자 제공 운영 기록입니다.
+- 이 작업본은 `aleph.config.json` step 12의 제작 1·2·3 통합 저장점 후보입니다. 12단계 운영 배포·심판 결과·41종 공격 실행 결과·실제 SDP 엔진 결과는 아직 기록하지 않습니다.
+- 현재 배포의 실제 커밋은 `/aleph.json`의 `commit` 필드와 GitHub 커밋을 대조하여 별도로 확인합니다.
+
+## 12단계 제작 3 — 재현·운영 경계 안내
+
+이 절은 검사 기준 커밋 `e2b71097b641bccb8430c898cf65d416b569bd41`와 그 위의 **미커밋 12단계 제작 1·2·3 작업본**을 구분한다. 작성 시점 HEAD는 위 11단계 커밋이며, 12단계 운영 배포·심판 제출·공식 41종 총공세 판정은 실행하지 않았다. 아래 오래된 단계별 기록은 삭제하지 않았으며 당시의 실험·배포 이력이다.
+
+### 시스템 구성과 제공 엔진 경계
+
+| 구성요소 | 구현·책임 | 확인 상태 |
+| --- | --- | --- |
+| ALEPH SDP 엔진(제공) | `aleph.decision.v1` 판정 요청 계약을 검증·전달하고 학생 판정 결과를 소비하는 제공 측 엔진이다. | 실제 운영 엔진의 연결·전달·회수 집행은 이 저장소에서 실측하지 못했다. |
+| 학생 판정기 | `src/decider.mjs`의 `decide(request)`가 계약상 입력만 사용해 `allow`·`deny`·`step_up`을 돌려준다. 규칙은 `device_registered`, `step_up_required`, `resource_scope`다. | `npm run decider:test`는 가상 요청 연습이며 실제 엔진 판정이 아니다. |
+| 학생 탐지 규칙 | `src/detect.mjs`가 `docs/DETECT_EVENTS.md`의 가상 사건을 읽어 관찰 또는 `propose_revocation`을 반환한다. 10분 내 동일 주체 GET가 120건을 **초과**하면 `burst_read` 회수 제안을 만든다. | 제안은 실제 회수 API 실행이 아니며 운영 엔진 사건 연동도 미검증이다. |
+| 접속 앱·자료실 | PWA manifest·서비스 워커, Supabase 로그인, 기기 등록/승인, WebAuthn 요청 서명, 메모·공지 소유권 검사, 검증된 복원, 탈환 작전실을 제공한다. | 보호 API·DB가 필요한 흐름은 올바른 서버 환경과 승인 기기가 있어야 한다. |
+
+`docs/DECIDER_REQUEST.md`는 18개 요청 필드와 `schema`, `requestId`, `decision`, `reasonCode`, `ruleIds`의 5개 응답 필드를 정의한다. 브라우저가 보낸 역할·기기·신원 추정값을 학생 판정기에 새 계약 필드로 만들지 않는다. `docs/DETECT_EVENTS.md`의 사건도 가상 입력 형식이며 실제 접속 로그가 아니다.
+
+제작 1에서 `src/detect.mjs`에 추가한 `DETECTION_CONTRACT` export는 기존의 10분·120건 초과·`propose_revocation`·`burst_read` 상수를 공개 작전실 요약에 재사용할 뿐이다. 탐지 알고리즘, 반환 모양, 회수 제안 계약은 기준 커밋과 달라지지 않았다.
+
+### 깨끗한 설치와 로컬 검증
+
+필수 환경은 Node.js 22 이상과 Git이다. 비밀값은 저장소나 명령줄에 넣지 않는다.
+
+```powershell
+git clone https://github.com/ydb721/choi-bujang-secret-vault.git
+Set-Location choi-bujang-secret-vault
+npm.cmd install
+npm.cmd run operations:test
+npm.cmd run verification:test
+npm.cmd run device:test
+npm.cmd run pwa:test
+npm.cmd run recovery:test
+npm.cmd run policy:test
+npm.cmd run decider:test
+npm.cmd run detect:test
+npm.cmd run build -- --local
+```
+
+- `operations:test`·`verification:test`은 12단계 로컬 UI/기록 분리 시험이다.
+- `decider:test`와 `detect:test`는 각각 가상 판정 요청·가상 탐지 사건 연습이다.
+- `build -- --local`은 정적 공개 자료를 만들며 배포 식별 환경변수를 요구하지 않는다. 일반 `npm run build`는 Vercel이 주입하는 배포 메타데이터가 있어야 한다.
+- 정적 PWA 확인은 `node scripts/serve-pwa.mjs` 뒤 `http://127.0.0.1:4173/`을 연다. 이 서버는 `/api/*`를 503으로 거부하며 운영 API, 로그인, DB, 기기 승인을 제공하지 않는다. 종료는 그 터미널에서 `Ctrl+C`다.
+- 로컬 자동 시험은 완료되면 자체 종료한다. 이는 운영 서비스를 중지하는 작업이 아니다.
+
+서버 인증·자료실 API·WebAuthn 흐름에는 배포 환경의 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`가 필요하다. `ALEPH_RESOURCE_BINDINGS`는 판정기 자원 바인딩을 제공하는 선택 환경변수다. 배포 빌드는 Vercel의 `VERCEL_GIT_PROVIDER`, `VERCEL_GIT_REPO_OWNER`, `VERCEL_GIT_REPO_SLUG`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_URL`을 사용한다. 이름과 용도만 문서화하며 값은 출력·커밋·업로드하지 않는다.
+
+### 실행 기록의 신뢰도와 통합 검증표
+
+탈환 작전실은 다음 상태를 섞지 않는다: 운영 API 실측, 사용자 제공 실제 심판 판정 기록, 로컬 테스트, 가상 입력 연습, 미실행, 미연동, 검증 실패. 11단계 100/100은 사용자 제공 심판 결과 스크린샷으로 확인한 사실이지만 12단계 공식 41종 공격의 실행·통과 증거가 아니다.
+
+`docs/OPERATIONS_VERIFICATION.md`는 1~11단계 통합 표의 필드와 후보를 설명한다. 표는 실제 HTTP 응답이 있을 때만 메모리에 기록하며 서버 request ID가 없으면 `null`로 남긴다. clientCaseId는 서버 ID가 아니고, 경로는 일반화하며 메모 본문·토큰·쿠키·assertion·nonce·challenge·UUID를 저장하지 않는다. 공식 41종의 식별자와 실행 기록은 확보되지 않았으므로 임의로 41/41 성공으로 표시하지 않는다.
+
+### 중지·복구·롤백 절차
+
+1. 먼저 `git status`와 `git diff`로 현재 작업과 되돌릴 파일을 확인한다. 정상 커밋은 `git show e2b71097b641bccb8430c898cf65d416b569bd41 --stat`으로 확인한다.
+2. 특정 파일만 기준 커밋으로 되돌릴 때는 다른 미커밋 변경을 먼저 검토·보존한 뒤 `git restore --source=e2b71097b641bccb8430c898cf65d416b569bd41 -- 경로/파일`을 사용한다. `git reset --hard`는 사용하지 않는다.
+3. 코드 배포 롤백은 Vercel 대시보드에서 확인한 이전 정상 배포를 선택·승격하는 운영 절차다. `/aleph.json`의 commit과 대상 GitHub 커밋이 일치하는지 확인한 뒤에만 완료로 기록한다. 이는 DB 복구와 별개다.
+4. 운영 DB는 Supabase Free 자동 백업에 의존하지 않는다. 승인된 운영 절차로 만든 수동 `pg_dump` 백업은 저장소 밖에 보관한다. DB 복구는 별도 승인·보존 정책·서비스 중단 범위를 검토한 뒤 수행하며, 이 문서는 실제 DB 복원 시험 성공을 주장하지 않는다.
+5. 메모 복원은 먼저 검증된 사본의 소유자·해시·버전을 서버에서 검증하고 읽기 전용 미리보기를 확인한 뒤에만 실행한다. 실행 후에는 별도의 정상 조회로 결과를 확인한다. 실행하지 않았다면 미실행으로 남긴다.
+6. 정책 복원은 기본적으로 `npm.cmd run policy:restore`로 미리보기만 한다. 변경 범위와 계획 확인값을 검토하지 않은 `--apply` 실행은 하지 않는다. 실제 적용·롤백 결과는 별도 기록이 필요하다.
+
+운영 배포 상태는 Vercel 대시보드 또는 공개 `/aleph.json`에서 읽기 전용으로 확인한다. 로컬 정적 서버의 `Ctrl+C`는 운영 Vercel 서비스를 중지하지 않는다.
+
+## 과거 11단계 제작·검증 이력 (2026-10-15 당시 기록)
 
 - 현재 운영 버전은 [운영 `/aleph.json`](https://choi-bujang-secret-vault-pink.vercel.app/aleph.json)의 **`commit` 필드**로 확인한다. README에는 현재 버전의 SHA를 고정하지 않으며, 아래 고정 SHA는 당시 검증·제출·배포 이력을 식별한다.
 - 이전 검증·심판 제출 기준 커밋: `6bfddf6844c872492f34acde09c38c3779453f5d` (`6bfddf6`). 현재 운영 버전을 뜻하지 않는다.

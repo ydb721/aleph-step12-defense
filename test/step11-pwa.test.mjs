@@ -4,12 +4,14 @@ import { test } from 'node:test';
 import vm from 'node:vm';
 
 const ORIGIN = 'https://pwa.example.test';
-const CACHE = 'byteback-public-v2';
+const CACHE = 'byteback-public-v3';
 const PUBLIC_PATHS = [
   '/offline.html',
   '/manifest.webmanifest',
   '/pwa.mjs',
   '/device.mjs',
+  '/operations.mjs',
+  '/operations-manifest.json',
   '/vendor/simplewebauthn-browser.js',
   '/vendor/simplewebauthn-browser.umd.js',
   '/icons/icon-192.png',
@@ -149,6 +151,8 @@ test('PWA manifest and real PNG files provide install metadata', async () => {
     && /href=["']\/manifest\.webmanifest["']/u.test(tag)));
   assert.ok(tags.some(tag => /type=["']module["']/iu.test(tag)
     && /src=["']\/pwa\.mjs["']/u.test(tag)));
+  assert.ok(tags.some(tag => /type=["']module["']/iu.test(tag)
+    && /src=["']\/operations\.mjs["']/u.test(tag)));
   assert.match(index, /기기 승인 미확인/u);
 });
 

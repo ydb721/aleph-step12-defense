@@ -11,7 +11,8 @@ import { prepareDeviceHttps } from '../scripts/prepare-device-https.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const temporary = await mkdtemp(join(tmpdir(), 'byteback-https-prepare-tests-'));
 const config = JSON.parse(await readFile(join(root, 'aleph.config.json')));
-assert.equal(config.step, 11, 'the final Step 11 candidate must advertise step 11');
+assert.ok(config.step >= 11 && config.step <= 12,
+  'the device HTTPS preparation profile must keep the Step 11-or-later contract');
 const origin = 'https://s11-isolated-fixture.vercel.app';
 // Nonexistent synthetic project reference and nonsecret dummy values: no network calls.
 const supabaseRef = 'a'.repeat(20);
@@ -217,6 +218,9 @@ test('isolated local build emits explicit dirty-snapshot metadata and no product
     assert.equal(metadata.step, config.step);
     assert.equal(metadata.restoreRoute, config.restoreRoute);
     assert.deepEqual(JSON.parse(await readFile(join(outputDir, 'public/data.json'))), { notes: [] });
+    const operations = JSON.parse(await readFile(join(outputDir, 'public/operations-manifest.json'), 'utf8'));
+    assert.equal(operations.deployment.publicOrigin, origin);
+    assert.equal(operations.deployment.step, config.step);
   } finally {
     await unlink(link);
   }

@@ -1,11 +1,13 @@
 const CACHE_PREFIX = 'byteback-public-';
-const CACHE_NAME = CACHE_PREFIX + 'v2';
+const CACHE_NAME = CACHE_PREFIX + 'v3';
 const OFFLINE_PATH = '/offline.html';
 const PUBLIC_FILES = Object.freeze([
   OFFLINE_PATH,
   '/manifest.webmanifest',
   '/pwa.mjs',
   '/device.mjs',
+  '/operations.mjs',
+  '/operations-manifest.json',
   '/vendor/simplewebauthn-browser.js',
   '/vendor/simplewebauthn-browser.umd.js',
   '/icons/icon-192.png',

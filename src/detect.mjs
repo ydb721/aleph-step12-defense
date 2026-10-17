@@ -1,8 +1,19 @@
 // 9단계 탐지 입력은 docs/DETECT_EVENTS.md의 가상 사건 계약만 신뢰합니다.
 // 메모 내용, 토큰, 실명이나 계약에 없는 브라우저 값은 읽거나 보존하지 않습니다.
 
-const WINDOW_MS = 10 * 60 * 1000;
-const READ_LIMIT = 120;
+// This is an implementation summary, not evidence of a live engine event.
+// The operations room reads it during the public build so the displayed
+// threshold cannot drift from the detector below.
+export const DETECTION_CONTRACT = Object.freeze({
+  windowSeconds: 10 * 60,
+  readLimit: 120,
+  method: 'GET',
+  action: 'propose_revocation',
+  reasonCode: 'burst_read',
+});
+
+const WINDOW_MS = DETECTION_CONTRACT.windowSeconds * 1000;
+const READ_LIMIT = DETECTION_CONTRACT.readLimit;
 
 function validSubject(value) {
   return typeof value === 'string'

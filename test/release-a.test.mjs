@@ -28,7 +28,7 @@ test('Release profile retains its intended data-access contract', async () => {
     return;
   }
 
-  assert.equal(config.step, 11);
+  assert.ok(config.step >= 11, 'the signed-request release profile must remain Step 11 or later');
   assert.match(index, /signedFetch\(path/u);
   assert.match(index, /\/api\/memos\/item\?id=/u);
   assert.match(index, /\/api\/restore\/item\?id=/u);
