@@ -25,6 +25,9 @@ const prepare = (overrides = {}) => prepareDeviceHttps({ root, origin, supabaseR
 const git = (...args) => execFileSync('git', ['-C', root, ...args], {
   encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
 });
+const expectedSourceState = () => git('status', '--porcelain', '--untracked-files=all').trim()
+  ? 'uncommitted-snapshot'
+  : 'local-snapshot';
 const originals = new Map(await Promise.all(git('ls-files', '--cached', '--others',
   '--exclude-standard', '-z').split('\0').filter(Boolean).map(async path =>
   [path, sha(await readFile(join(root, path)))])));
@@ -53,7 +56,7 @@ test('snapshot includes current uncommitted device runtime with isolated configu
   assert.equal(receipt.baselineCommit, git('rev-parse', 'HEAD').trim());
   assert.equal(receipt.commit, null);
   assert.equal(receipt.notForSubmission, true);
-  assert.equal(receipt.sourceState, 'uncommitted-snapshot');
+  assert.equal(receipt.sourceState, expectedSourceState());
   assert.equal(receipt.rpID, new URL(origin).hostname);
   // 10 baseline handlers plus the Step 11 device endpoint and two static
   // item routes that avoid Vercel dynamic-route query rewriting.
@@ -211,7 +214,7 @@ test('isolated local build emits explicit dirty-snapshot metadata and no product
     assert.equal(metadata.commit, null);
     assert.equal(metadata.baselineCommit, receipt.baselineCommit);
     assert.equal(metadata.notForSubmission, true);
-    assert.equal(metadata.sourceState, 'uncommitted-snapshot');
+    assert.equal(metadata.sourceState, expectedSourceState());
     assert.equal(metadata.preparedFingerprint, receipt.preparedFingerprint);
     assert.equal(metadata.publicAppUrl, origin);
     assert.equal(metadata.rpID, new URL(origin).hostname);
