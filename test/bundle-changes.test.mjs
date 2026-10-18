@@ -1,40 +1,59 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { changedFilesForCommit } from '../scripts/bundle-changes.mjs';
+import { join, relative } from 'node:path';
+import { test } from 'node:test';
+import { changedFilesFromCommitResponse, localCommitFromGitMetadata, sameChangedFiles } from '../scripts/bundle-changes.mjs';
 
-test('submission records root, ordinary and merged changes against the first parent', () => {
-  const root = mkdtempSync(join(tmpdir(), 'bundle-changes-'));
-  const bundleCalls = [];
-  const git = (...args) => execFileSync('git', ['-C', root, ...args], {
-    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim();
-  const bundleGit = (...args) => {
-    bundleCalls.push(args);
-    return git(...args);
-  };
+const SHA = 'a'.repeat(40);
+const tempRoot = () => mkdtempSync(join(tmpdir(), 'bundle-gitless-'));
+const file = (path, value) => {
+  mkdirSync(join(path, '..'), { recursive: true });
+  writeFileSync(path, value, 'utf8');
+};
+
+test('gitless bundle resolves ordinary, detached, packed-ref, and worktree HEAD metadata', () => {
+  const root = tempRoot();
   try {
-    git('init', '-b', 'main');
-    git('config', 'user.name', 'Fixture');
-    git('config', 'user.email', 'fixture@invalid.test');
-    writeFileSync(join(root, 'baseline.txt'), 'baseline');
-    git('add', '.'); git('commit', '-m', 'root');
-    assert.deepEqual(changedFilesForCommit(bundleGit, git('rev-parse', 'HEAD')), ['baseline.txt']);
-    git('checkout', '-b', 'recovery');
-    writeFileSync(join(root, 'recovery.txt'), 'recovery');
-    git('add', '.'); git('commit', '-m', 'recovery');
-    assert.deepEqual(changedFilesForCommit(bundleGit, git('rev-parse', 'HEAD')), ['recovery.txt']);
-    git('checkout', 'main');
-    writeFileSync(join(root, 'other.txt'), 'other work');
-    git('add', '.'); git('commit', '-m', 'other work');
-    git('merge', '--no-ff', 'recovery', '-m', 'merge recovery');
-    assert.deepEqual(changedFilesForCommit(bundleGit, git('rev-parse', 'HEAD')), ['recovery.txt']);
-    assert.equal(git('show', 'HEAD:other.txt'), 'other work');
-    assert.equal(bundleCalls.length, 3);
-    assert.ok(bundleCalls.every(args => args[0] === 'show'
-      && args.slice(1, -1).join(',') === '--first-parent,--format=,--name-only,--no-renames'));
+    const ordinary = join(root, 'ordinary');
+    file(join(ordinary, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    file(join(ordinary, '.git', 'refs', 'heads', 'main'), `${SHA}\n`);
+    assert.equal(localCommitFromGitMetadata(ordinary), SHA);
+
+    const detached = join(root, 'detached');
+    file(join(detached, '.git', 'HEAD'), `${SHA.toUpperCase()}\n`);
+    assert.equal(localCommitFromGitMetadata(detached), SHA);
+
+    const packed = join(root, 'packed');
+    file(join(packed, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    file(join(packed, '.git', 'packed-refs'), `# pack-refs with: peeled\n${SHA} refs/heads/main\n`);
+    assert.equal(localCommitFromGitMetadata(packed), SHA);
+
+    const worktree = join(root, 'worktree');
+    const gitDir = join(root, 'metadata', 'worktrees', 'current');
+    const common = join(root, 'metadata');
+    file(join(worktree, '.git'), `gitdir: ${relative(worktree, gitDir)}\n`);
+    file(join(gitDir, 'HEAD'), 'ref: refs/heads/experiment\n');
+    file(join(gitDir, 'commondir'), `${relative(gitDir, common)}\n`);
+    file(join(common, 'refs', 'heads', 'experiment'), `${SHA}\n`);
+    assert.equal(localCommitFromGitMetadata(worktree), SHA);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('gitless bundle fails closed for missing metadata and malformed commit files', () => {
+  const root = tempRoot();
+  try {
+    assert.throws(() => localCommitFromGitMetadata(root), /\.git 메타데이터/u);
+    file(join(root, '.git'), 'not a git worktree pointer\n');
+    assert.throws(() => localCommitFromGitMetadata(root), /Git worktree/u);
+    assert.throws(() => changedFilesFromCommitResponse({ files: [] }), /변경 파일/u);
+    assert.throws(() => changedFilesFromCommitResponse({ files: [{ filename: 'a' }, { filename: 'a' }] }), /형식/u);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('gitless bundle keeps a sorted, exact first-parent file comparison', () => {
+  const fromCommit = changedFilesFromCommitResponse({ files: [{ filename: 'b.mjs' }, { filename: 'a.mjs' }] });
+  assert.deepEqual(fromCommit, ['a.mjs', 'b.mjs']);
+  assert.equal(sameChangedFiles(fromCommit, ['a.mjs', 'b.mjs']), true);
+  assert.equal(sameChangedFiles(fromCommit, ['b.mjs', 'a.mjs']), false);
 });
