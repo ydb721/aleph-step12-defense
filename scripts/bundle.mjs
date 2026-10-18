@@ -9,8 +9,8 @@ const DEFAULT_NOTES = Object.freeze({
   explanation: 'No local bundle notes were supplied. The bundle distinguishes actual public GET observations from not_run checks and does not claim execution of the official 41 attacks.',
   blockedAt: 'Official 41-attack identifiers and execution evidence were not supplied; unexecuted checks remain not_run.',
 });
-const git = (...args) => execFileSync('git', ['-C', root, ...args], {
-  encoding: 'utf8', timeout: 5000, maxBuffer: 512 * 1024, windowsHide: true,
+const git = (...args) => execFileSync('git', args, {
+  cwd: root, encoding: 'utf8', timeout: 5000, maxBuffer: 512 * 1024, windowsHide: true,
   env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
 }).trim();
 const fromCommit = (path) => JSON.parse(git('show', `HEAD:${path}`));
