@@ -7,6 +7,7 @@ import {
   sameChangedFiles,
   sameSourceText,
 } from './bundle-changes.mjs';
+import { fetchPublic } from './bundle-http.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const DEFAULT_NOTES = Object.freeze({
@@ -45,16 +46,6 @@ const sameJson = (left, right) => {
   const rightKeys = Object.keys(right).sort();
   return leftKeys.length === rightKeys.length && leftKeys.every((key, index) => key === rightKeys[index]
     && sameJson(left[key], right[key]));
-};
-const fetchPublic = async (url, label) => {
-  let response;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
-  try { response = await fetch(url, { method: 'GET', signal: controller.signal, headers: { Accept: 'application/vnd.github+json' } }); }
-  catch { fail(`${label} 공개 HTTPS GET에 실패했습니다.`); }
-  finally { clearTimeout(timeout); }
-  if (!response?.ok) fail(`${label} 공개 HTTPS GET이 HTTP ${response?.status ?? 'network'}로 실패했습니다.`);
-  return response;
 };
 const fetchJson = async (url, label) => {
   const response = await fetchPublic(url, label);
@@ -114,6 +105,7 @@ try {
   await Promise.all([
     'scripts/bundle.mjs',
     'scripts/bundle-changes.mjs',
+    'scripts/bundle-http.mjs',
     'src/decider.mjs',
     'src/attack-check.mjs',
   ].map(relativePath => verifyCommittedSource(owner, repo, commit, relativePath)));
