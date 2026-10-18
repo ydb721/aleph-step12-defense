@@ -49,6 +49,9 @@ test('gitless bundle fails closed for missing metadata and malformed commit file
   const root = tempRoot();
   try {
     assert.throws(() => localCommitFromGitMetadata(root), /\.git 메타데이터/u);
+    const missingHead = join(root, 'missing-head');
+    mkdirSync(join(missingHead, '.git'), { recursive: true });
+    assert.throws(() => localCommitFromGitMetadata(missingHead));
     file(join(root, '.git'), 'not a git worktree pointer\n');
     assert.throws(() => localCommitFromGitMetadata(root), /Git worktree/u);
     assert.throws(() => changedFilesFromCommitResponse({ files: [] }), /변경 파일/u);

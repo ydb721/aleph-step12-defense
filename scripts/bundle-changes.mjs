@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const SHA = /^[a-f0-9]{40}$/iu;
@@ -10,7 +10,7 @@ function gitDirectories(root) {
   const dotGit = join(root, '.git');
   if (!existsSync(dotGit)) fail('.git 메타데이터에 접근할 수 없습니다.');
   let gitDir = dotGit;
-  if (!statSync(dotGit).isDirectory()) {
+  if (!existsSync(join(dotGit, 'HEAD'))) {
     const pointer = /^gitdir:\s*(.+)$/mu.exec(text(dotGit));
     if (!pointer) fail('Git worktree 경로를 확인할 수 없습니다.');
     gitDir = resolve(root, pointer[1]);
