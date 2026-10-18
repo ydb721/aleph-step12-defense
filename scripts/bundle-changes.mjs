@@ -58,3 +58,8 @@ export function changedFilesFromCommitResponse(commit) {
 export function sameChangedFiles(left, right) {
   return left.length === right.length && left.every((file, index) => file === right[index]);
 }
+
+export function sameSourceText(left, right) {
+  const normalize = value => typeof value === 'string' ? value.replace(/\r\n/gu, '\n') : null;
+  return normalize(left) !== null && normalize(left) === normalize(right);
+}

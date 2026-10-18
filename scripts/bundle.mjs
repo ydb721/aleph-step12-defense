@@ -1,7 +1,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { changedFilesFromCommitResponse, localCommitFromGitMetadata, sameChangedFiles } from './bundle-changes.mjs';
+import {
+  changedFilesFromCommitResponse,
+  localCommitFromGitMetadata,
+  sameChangedFiles,
+  sameSourceText,
+} from './bundle-changes.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const DEFAULT_NOTES = Object.freeze({
@@ -41,7 +46,7 @@ const sameJson = (left, right) => {
   return leftKeys.length === rightKeys.length && leftKeys.every((key, index) => key === rightKeys[index]
     && sameJson(left[key], right[key]));
 };
-const fetchJson = async (url, label) => {
+const fetchPublic = async (url, label) => {
   let response;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -49,8 +54,24 @@ const fetchJson = async (url, label) => {
   catch { fail(`${label} 공개 HTTPS GET에 실패했습니다.`); }
   finally { clearTimeout(timeout); }
   if (!response?.ok) fail(`${label} 공개 HTTPS GET이 HTTP ${response?.status ?? 'network'}로 실패했습니다.`);
+  return response;
+};
+const fetchJson = async (url, label) => {
+  const response = await fetchPublic(url, label);
   try { return { body: await response.json(), link: response.headers.get('link') ?? '' }; }
   catch { fail(`${label} 응답 JSON 형식이 올바르지 않습니다.`); }
+};
+const fetchText = async (url, label) => {
+  const response = await fetchPublic(url, label);
+  try { return await response.text(); }
+  catch { fail(`${label} 응답 본문을 읽을 수 없습니다.`); }
+};
+const verifyCommittedSource = async (owner, repo, commit, relativePath) => {
+  const encodedPath = relativePath.split('/').map(encodeURIComponent).join('/');
+  const url = `https://raw.githubusercontent.com/${owner}/${repo}/${commit}/${encodedPath}`;
+  const committed = await fetchText(url, `GitHub raw ${relativePath}`);
+  const local = readFileSync(join(root, ...relativePath.split('/')), 'utf8');
+  if (!sameSourceText(local, committed)) fail(`${relativePath}가 검증된 커밋과 일치하지 않습니다.`);
 };
 const githubFiles = async (owner, repo, commit) => {
   const files = [];
@@ -93,6 +114,12 @@ try {
   const configUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${commit}/aleph.config.json`;
   const { body: config } = await fetchJson(configUrl, 'GitHub raw aleph.config.json');
   if (!sameJson(localConfig, config)) fail('로컬 aleph.config.json과 커밋 설정이 일치하지 않습니다.');
+  await Promise.all([
+    'scripts/bundle.mjs',
+    'scripts/bundle-changes.mjs',
+    'src/decider.mjs',
+    'src/attack-check.mjs',
+  ].map(relativePath => verifyCommittedSource(owner, repo, commit, relativePath)));
   if (parents.length > 1) {
     const firstParentFiles = await githubCompareFiles(owner, repo, parents[0], commit);
     if (!sameChangedFiles(changedFiles, firstParentFiles)) {

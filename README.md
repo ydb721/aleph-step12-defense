@@ -612,7 +612,7 @@ npm.cmd run bundle
 
 The Bundle uses only the checked-out Git commit as submission evidence. It reads local `.git` metadata for HEAD, then uses public GitHub HTTPS GET requests to verify the same commit SHA, changed files, and committed `aleph.config.json`. It stops if Git metadata, network access, or committed configuration verification fails.
 
-Uncommitted files are not used as evidence and are not reported as clean. Check `git status`, commit intended changes, then generate the bundle. Do not commit `bundle-notes.json` or `artifacts/submission.json`.
+Uncommitted files are not used as evidence and are not reported as clean. The Bundle compares its four executable source files with the selected GitHub commit and stops if their code differs; unrelated dirty files remain outside the submission evidence instead of being labelled clean. Check `git status`, commit intended changes, then generate the bundle. Do not commit `bundle-notes.json` or `artifacts/submission.json`.
 
 로컬 `bundle-notes.json`의 explanation을 5단계로 바꿔 저장. `artifacts/submission.json` 및 `bundle-notes.json`은 커밋하지 않음.
 SQL 권한 회수와 A/B 로그인·CRUD 검증은 실제 실행 전 통과했다고 기록하지 않음.

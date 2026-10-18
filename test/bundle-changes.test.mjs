@@ -3,7 +3,12 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
-import { changedFilesFromCommitResponse, localCommitFromGitMetadata, sameChangedFiles } from '../scripts/bundle-changes.mjs';
+import {
+  changedFilesFromCommitResponse,
+  localCommitFromGitMetadata,
+  sameChangedFiles,
+  sameSourceText,
+} from '../scripts/bundle-changes.mjs';
 
 const SHA = 'a'.repeat(40);
 const tempRoot = () => mkdtempSync(join(tmpdir(), 'bundle-gitless-'));
@@ -56,4 +61,10 @@ test('gitless bundle keeps a sorted, exact first-parent file comparison', () => 
   assert.deepEqual(fromCommit, ['a.mjs', 'b.mjs']);
   assert.equal(sameChangedFiles(fromCommit, ['a.mjs', 'b.mjs']), true);
   assert.equal(sameChangedFiles(fromCommit, ['b.mjs', 'a.mjs']), false);
+});
+
+test('committed source comparison permits Windows line endings but rejects code changes', () => {
+  assert.equal(sameSourceText('export const value = 1;\r\n', 'export const value = 1;\n'), true);
+  assert.equal(sameSourceText('export const value = 2;\n', 'export const value = 1;\n'), false);
+  assert.equal(sameSourceText(null, 'export const value = 1;\n'), false);
 });
