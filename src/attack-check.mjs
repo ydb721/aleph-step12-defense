@@ -7,6 +7,17 @@ export async function runAttackChecks(config) {
     try { return await fetch(url, { method: 'GET' }); }
     catch { return null; }
   };
+  const inspectResponse = async (response) => {
+    if (!response) return null;
+    let body = null;
+    try { body = await response.json(); } catch { /* non-json */ }
+    const errorCode = typeof body?.error === 'string'
+      && /^[A-Z][A-Z0-9_]{0,79}$/u.test(body.error) ? body.error : null;
+    return { status: response.status, ok: response.ok, body, errorCode };
+  };
+  const httpObservation = (result, detail = '') => result
+    ? `HTTP ${result.status}${result.errorCode ? `; error=${result.errorCode}` : ''}${detail}`
+    : 'not_run';
 
   if (config.step === 1) {
     const response = await publicGet(new URL('/data.json', base));
@@ -36,38 +47,31 @@ export async function runAttackChecks(config) {
   if (base.protocol !== 'https:' || !base.hostname.endsWith('.vercel.app')
       || direct.protocol !== 'https:') throw new Error('HTTPS 주소를 확인해 주세요.');
 
-  const list = await publicGet(new URL('/api/memos',base));
-  let jsonError = false;
-  try { jsonError = typeof (await list?.json())?.error === 'string'; } catch { /* non-json */ }
-
-  const single = await publicGet(
-    new URL('/api/memos/11111111-1111-4111-8111-111111111111',base));
-  const staticRes = await publicGet(new URL('/data.json',base));
-  const deployed = await publicGet(new URL('/aleph.json',base));
-  let noStatic = staticRes?.status === 404;
-  if (staticRes?.ok) {
-    try {
-      const obj = await staticRes.json();
-      noStatic = Array.isArray(obj?.notes) && !obj.notes.length && !('sampleMarker' in obj);
-    } catch { noStatic = false; }
-  }
+  const list = await inspectResponse(await publicGet(new URL('/api/memos',base)));
+  const single = await inspectResponse(await publicGet(
+    new URL('/api/memos/11111111-1111-4111-8111-111111111111',base)));
+  const staticRes = await inspectResponse(await publicGet(new URL('/data.json',base)));
+  const deployed = await inspectResponse(await publicGet(new URL('/aleph.json',base)));
+  const noStatic = staticRes?.status === 404 || staticRes?.ok
+    && Array.isArray(staticRes.body?.notes) && !staticRes.body.notes.length
+    && !('sampleMarker' in staticRes.body);
 
   // Direct access using an anon/publishable key is checked by the judge, not by this script.
-  const directRes = await publicGet(direct);
+  const directRes = await inspectResponse(await publicGet(direct));
 
   return [
-    {attackId:'unauthenticated_memo_list',expected:'401/403 JSON 오류',
-      observed:!list ? 'not_run' : [401,403].includes(list.status)&&jsonError
-        ? '비로그인 목록 거부, JSON 오류' : 'HTTP '+list.status+', JSON='+jsonError},
-    {attackId:'unauthenticated_memo_item',expected:'401/403',
-      observed:!single ? 'not_run' : [401,403].includes(single.status)
-        ? '비로그인 단건 거부' : 'HTTP '+single.status},
+    {attackId:'unauthenticated_memo_list',expected:'HTTP 401; error=AUTH_REQUIRED',
+      observed:httpObservation(list)},
+    {attackId:'unauthenticated_memo_item',expected:'HTTP 401; error=AUTH_REQUIRED',
+      observed:httpObservation(single)},
+    {attackId:'foreign_memo_scope',expected:'인증된 다른 소유자 메모 조회 거부',
+      observed:'not_run'},
     {attackId:'static_memo_empty',expected:'정적 자료 0건',
-      observed:!staticRes ? 'not_run' : noStatic?'정적 자료 0건':'확인 필요 HTTP '+staticRes.status},
+      observed:httpObservation(staticRes, noStatic ? '; static_memo_empty=true' : '; static_memo_empty=false')},
     {attackId:'deployment_identity',expected:'/aleph.json 열림',
-      observed:!deployed ? 'not_run' : deployed.ok?'/aleph.json 열림':'HTTP '+deployed.status},
+      observed:httpObservation(deployed, deployed?.ok ? '; deployment_identity_available=true'
+        : '; deployment_identity_available=false')},
     {attackId:'direct_no_key_probe',expected:'키 없이 직접 자료 API 요청 거부',
-      observed:!directRes ? 'not_run'
-        : '키 없는 요청 HTTP ' + directRes.status + '; anon 키 요청은 심판에서 확인'},
+      observed:httpObservation(directRes, '; anon_key_request=not_run')},
   ];
 }
