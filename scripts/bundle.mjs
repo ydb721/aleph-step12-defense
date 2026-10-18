@@ -77,9 +77,7 @@ const githubFiles = async (owner, repo, commit) => {
   const files = [];
   let expectedParents = null;
   for (let page = 1; page <= 100; page += 1) {
-    const url = new URL(`https://api.github.com/repos/${owner}/${repo}/commits/${commit}`);
-    url.searchParams.set('per_page', '100');
-    url.searchParams.set('page', String(page));
+    const url = `https://api.github.com/repos/${owner}/${repo}/commits/${commit}?per_page=100&page=${page}`;
     const { body, link } = await fetchJson(url, 'GitHub Commit API');
     if (body?.sha?.toLowerCase() !== commit) fail('GitHub Commit API SHA가 로컬 HEAD와 다릅니다.');
     if (!Array.isArray(body.parents)) fail('GitHub Commit API 부모 커밋 형식이 올바르지 않습니다.');
@@ -94,8 +92,7 @@ const githubFiles = async (owner, repo, commit) => {
   fail('GitHub Commit API 변경 파일 페이지 수가 제한을 초과했습니다.');
 };
 const githubCompareFiles = async (owner, repo, base, head) => {
-  const url = new URL(`https://api.github.com/repos/${owner}/${repo}/compare/${base}...${head}`);
-  url.searchParams.set('per_page', '100');
+  const url = `https://api.github.com/repos/${owner}/${repo}/compare/${base}...${head}?per_page=100`;
   const { body, link } = await fetchJson(url, 'GitHub Compare API');
   if (/\brel="next"/u.test(link) || !Array.isArray(body?.files)) {
     fail('GitHub Compare API의 first-parent 변경 파일 목록이 불완전합니다.');
