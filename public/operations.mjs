@@ -397,7 +397,7 @@ export function createOperationsRoom(root) {
       addVerification(definition, {
         httpStatus: response.status,
         errorCode: payload?.error,
-        serverRequestId: response.headers.get('x-request-id'),
+        serverRequestId: response.headers.get('x-byteback-trace'),
         environment: window.location.origin === configuredOrigin(manifest) ? 'operational' : 'isolation',
         source: 'user_requested_credentials_omit_get',
       });

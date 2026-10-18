@@ -24,9 +24,9 @@ const deferred = () => {
   return { promise, resolve };
 };
 
-const response = (status, body) => ({
+const response = (status, body, traceId = null) => ({
   status, ok: status >= 200 && status < 300,
-  headers: { get: () => null },
+  headers: { get: name => name.toLowerCase() === 'x-byteback-trace' ? traceId : null },
   json: async () => body,
 });
 const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
@@ -100,6 +100,45 @@ test('a cleared or replaced operations session ignores delayed manifest, verific
     await settle();
     assert.doesNotMatch(text(nodes.get('#operations-list')), /aaaaaaaaaaaa/u,
       'a prior session cannot restore delayed deployment or device state');
+  } finally {
+    globalThis.document = previous.document;
+    globalThis.window = previous.window;
+    globalThis.fetch = previous.fetch;
+  }
+});
+
+test('operations records the real trace header for signed 200 and unauthenticated 401 observations', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../public/operations-manifest.json', import.meta.url), 'utf8'));
+  const previous = { document: globalThis.document, window: globalThis.window, fetch: globalThis.fetch };
+  globalThis.document = { createElement: () => new Node() };
+  globalThis.window = { location: { origin: manifest.deployment.publicOrigin } };
+  globalThis.fetch = path => {
+    if (path === '/operations-manifest.json') return Promise.resolve(response(200, manifest));
+    if (path === '/api/memos') {
+      return Promise.resolve(response(401, { error: 'AUTH_REQUIRED' }, 'trace-unauthenticated-401'));
+    }
+    throw new Error('UNEXPECTED_FETCH_' + path);
+  };
+
+  try {
+    const { root, nodes } = roomFixture();
+    const room = createOperationsRoom(root);
+    room.allow({ httpStatus: 200, checkedAt: '2026-10-18T00:00:00.000Z',
+      serverRequestId: 'trace-signed-200' });
+    await settle();
+    await settle();
+    assert.match(text(nodes.get('#verification-table-body')), /trace-signed-200/u);
+
+    nodes.get('#operations-unauthenticated-check').click();
+    await settle();
+    await settle();
+    const table = text(nodes.get('#verification-table-body'));
+    assert.match(table, /HTTP 401 · AUTH_REQUIRED/u);
+    assert.match(table, /trace-unauthenticated-401/u);
+    assert.match(nodes.get('#verification-summary').textContent, /실제 HTTP 응답 기록 2건 · 통과 2건/u);
+
+    room.clear();
+    assert.equal(nodes.get('#verification-table-body').children.length, 0);
   } finally {
     globalThis.document = previous.document;
     globalThis.window = previous.window;

@@ -24,6 +24,12 @@ test('a verification record requires an actual HTTP response and keeps client an
   assert.equal(record.clientCaseId, 'case-1');
   assert.equal(record.actualErrorCode, null, 'unknown response text is never retained as an error code');
   assert.equal(record.serverObservedAt, '2026-10-18T01:02:03.000Z');
+  assert.equal(recordVerification(approvedRead, {
+    httpStatus: 200, serverRequestId: 'not a safe request id', errorCode: null,
+  }, { clientCaseId: 'case-2' }).serverRequestId, null);
+  assert.equal(recordVerification(approvedRead, {
+    httpStatus: 200, errorCode: null,
+  }, { clientCaseId: 'case-3' }).serverRequestId, null);
 });
 
 test('normal success and documented prohibited-request rejection have separate pass rules', () => {
@@ -53,6 +59,9 @@ test('verification UI uses generalized paths and clears protected records with t
   assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/u);
   assert.match(html, /id="operations-unauthenticated-check"/u);
   assert.match(source, /fetch\('\/api\/memos', \{\s*method: 'GET', credentials: 'omit'/u);
+  assert.match(source, /response\.headers\.get\('x-byteback-trace'\)/u);
+  assert.doesNotMatch(source, /response\.headers\.get\('x-request-id'\)/u);
+  assert.match(html, /serverRequestId:\s*response\.headers\.get\('x-byteback-trace'\)/u);
   assert.match(source, /통과로 기록하지 않았습니다/u);
   assert.match(procedure, /공식 41종 공격/u);
   assert.match(procedure, /운영에서는 승인 기기의 기존 읽기 전용 자료 조회만/u);

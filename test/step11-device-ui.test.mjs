@@ -280,6 +280,27 @@ test('a signed empty memo response visibly confirms successful retrieval and zer
   assert.equal(active.get('memo-editor').hidden, false);
 });
 
+test('a signed memo GET forwards only the server-provided trace ID to operations', async () => {
+  const traced = await page();
+  const tracedEvents = [];
+  traced.window.addEventListener('byteback:operations-access', event => tracedEvents.push(event.detail));
+  traced.setNextResponse(Response.json([
+    { id: MEMO_ID, title: 'fixture protected memo', body: '' },
+  ], { headers: { 'X-Byteback-Trace': 'trace-server-7' } }));
+  await traced.get('device-connect').emit('click');
+  assert.equal(tracedEvents.length, 1);
+  assert.equal(tracedEvents[0].httpStatus, 200);
+  assert.equal(tracedEvents[0].serverRequestId, 'trace-server-7');
+
+  const missing = await page();
+  const missingEvents = [];
+  missing.window.addEventListener('byteback:operations-access', event => missingEvents.push(event.detail));
+  await missing.get('device-connect').emit('click');
+  assert.equal(missingEvents.length, 1);
+  assert.equal(missingEvents[0].httpStatus, 200);
+  assert.equal(missingEvents[0].serverRequestId, null);
+});
+
 test('request challenge binds the exact method, path, query and UTF-8 body bytes sent to HTTP', async () => {
   const active = await page();
   const body = JSON.stringify({ title: '가상 제목', body: 'line one\nline two' });

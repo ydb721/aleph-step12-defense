@@ -304,6 +304,7 @@
         deviceReady = true;
         dispatchOperationsEvent('byteback:operations-access', {
           httpStatus: response.status,
+          serverRequestId: response.headers.get('x-byteback-trace'),
           checkedAt: new Date().toISOString(),
         });
         editor.hidden = false;
