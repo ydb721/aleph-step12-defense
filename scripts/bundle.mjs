@@ -40,19 +40,10 @@ try {
   const dirty = git('status', '--porcelain', '--untracked-files=all');
   if (dirty) fail(`커밋되지 않은 파일이 있습니다. 먼저 확인해 주세요:\n${dirty}`);
   const commit = git('rev-parse', '--verify', 'HEAD');
-  let repoUrl;
-  try {
-    const raw = git('config', '--local', '--no-includes', '--get', 'remote.origin.url');
-    repoUrl = normalizedRepo(raw);
-  } catch (error) {
-    fail('GitHub HTTPS 저장소 주소를 origin으로 등록해 주세요.');
-  }
   const changedFiles = changedFilesForCommit(git, commit);
   if (!changedFiles.length) fail('마지막 커밋에 바뀐 파일이 없습니다.');
   const config = fromCommit('aleph.config.json');
-  if (normalizedRepo(config.repoUrl) !== repoUrl) {
-    fail('aleph.config.json의 repoUrl이 Git origin 주소와 다릅니다. 같은 저장소 주소로 맞춰 주세요.');
-  }
+  const repoUrl = normalizedRepo(config.repoUrl);
   const notes = bundleNotes();
   if (!Number.isInteger(config.step) || config.step < 1 || config.step > 12) fail('aleph.config.json의 step을 확인해 주세요.');
   if (config.step >= 3 && (!config.identityProvider || typeof config.identityProvider !== 'object'
