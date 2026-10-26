@@ -119,8 +119,10 @@ test('each executed stage 12 public check records its own response without reusi
   const originalFetch = globalThis.fetch;
   const runtimeConfig = { ...config, step: 12,
     originalApiUrl: 'https://fixture.supabase.co/rest/v1/memos' };
+  const requestTypes = [];
   try {
     globalThis.fetch = async url => {
+      requestTypes.push(typeof url);
       const target = String(url);
       if (target === 'https://student-defense.vercel.app/api/memos') {
         return new Response(JSON.stringify({ error: 'AUTH_REQUIRED' }), { status: 401 });
@@ -143,7 +145,9 @@ test('each executed stage 12 public check records its own response without reusi
     assert.equal(byId.get('static_memo_empty'), 'HTTP 404; static_memo_empty=true');
     assert.equal(byId.get('deployment_identity'),
       'HTTP 500; error=SERVER_ERROR; deployment_identity_available=false');
-    assert.equal(byId.get('direct_no_key_probe'), 'HTTP 200; anon_key_request=not_run');
+    assert.equal(byId.get('direct_no_key_probe'), 'HTTP 200');
+    assert.deepEqual([...new Set(requestTypes)], ['string'],
+      'isolated runners receive only string fetch URLs');
   } finally {
     globalThis.fetch = originalFetch;
   }
