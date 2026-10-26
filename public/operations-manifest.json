@@ -2,7 +2,7 @@
   "schema": "byteback.operations-room.v1",
   "deployment": {
     "step": 12,
-    "publicOrigin": "https://choi-bujang-secret-vault-pink.vercel.app"
+    "publicOrigin": "https://aleph-step12-defense.vercel.app"
   },
   "implementation": {
     "decider": {

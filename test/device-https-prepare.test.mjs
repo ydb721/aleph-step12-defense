@@ -14,6 +14,8 @@ const config = JSON.parse(await readFile(join(root, 'aleph.config.json')));
 assert.ok(config.step >= 11 && config.step <= 12,
   'the device HTTPS preparation profile must keep the Step 11-or-later contract');
 const origin = 'https://s11-isolated-fixture.vercel.app';
+const productionAlias = 'https://' + new URL(config.publicAppUrl).hostname
+  .replace(/\.vercel\.app$/u, '') + '-git-main-example.vercel.app';
 // Nonexistent synthetic project reference and nonsecret dummy values: no network calls.
 const supabaseRef = 'a'.repeat(20);
 const backend = `https://${supabaseRef}.supabase.co`;
@@ -115,7 +117,7 @@ test('source and prepared fingerprints are deterministic and all prepared file h
 
 for (const [name, overrides, error] of [
   ['production origin', { origin: config.publicAppUrl }, /PRODUCTION_ORIGIN_FORBIDDEN/u],
-  ['production alias', { origin: 'https://choi-bujang-secret-vault-git-main-example.vercel.app' }, /PRODUCTION_ORIGIN_FORBIDDEN/u],
+  ['production alias', { origin: productionAlias }, /PRODUCTION_ORIGIN_FORBIDDEN/u],
   ['unencrypted origin', { origin: 'http://s11-isolated-fixture.vercel.app' }, /INVALID_ORIGIN/u],
   ['origin with path', { origin: origin + '/notes' }, /INVALID_ORIGIN/u],
   ['origin with query', { origin: origin + '?trial=1' }, /INVALID_ORIGIN/u],
