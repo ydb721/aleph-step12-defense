@@ -1,6 +1,6 @@
 {
   "step": 12,
-  "repoUrl": "https://github.com/ydb721/choi-bujang-secret-vault",
+  "repoUrl": "https://github.com/ydb721/aleph-step12-defense",
   "publicAppUrl": "https://choi-bujang-secret-vault-pink.vercel.app",
   "sampleMarker": "SAMPLE_NOTE_1",
   "judgeIssuer": "https://aleph-judge-production.up.railway.app/defense/judge",

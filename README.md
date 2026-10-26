@@ -2,7 +2,7 @@
 
 ## 현재 확정 상태 (2026-10-18)
 
-- 운영 저장소: https://github.com/ydb721/choi-bujang-secret-vault / 운영 배포: https://choi-bujang-secret-vault-pink.vercel.app
+- 12단계 독립 저장소: https://github.com/ydb721/aleph-step12-defense / 독립 배포 주소는 아직 확정되지 않았습니다.
 - 10단계 100/100 및 11단계 100/100은 사용자가 제공한 심판 결과 스크린샷으로 확인한 기록입니다. 11단계 최종 검증 커밋은 `e2b71097b641bccb8430c898cf65d416b569bd41`입니다.
 - Release A/B 운영 배포 완료와 Vercel Serverless Function 12개는 사용자 제공 운영 기록입니다.
 - 이 작업본은 `aleph.config.json` step 12의 제작 1·2·3 통합 **저장점**입니다. 12단계 작전실의 운영 배포 완료는 사용자 제공 기록으로 확인했습니다.
@@ -34,8 +34,8 @@
 필수 환경은 Node.js 22 이상과 Git이다. 비밀값은 저장소나 명령줄에 넣지 않는다.
 
 ```powershell
-git clone https://github.com/ydb721/choi-bujang-secret-vault.git
-Set-Location choi-bujang-secret-vault
+git clone https://github.com/ydb721/aleph-step12-defense.git
+Set-Location aleph-step12-defense
 npm.cmd install
 npm.cmd run operations:test
 npm.cmd run verification:test
