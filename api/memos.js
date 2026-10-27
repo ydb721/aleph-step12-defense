@@ -74,7 +74,6 @@ async function dbRequest(method, params, payload) {
   const key = process.env.SUPABASE_SECRET_KEY;
   const headers = {
     apikey: key,
-    Authorization: 'Bearer ' + key,
     'Content-Type': 'application/json',
   };
   if (method !== 'GET') headers.Prefer = 'return=representation';

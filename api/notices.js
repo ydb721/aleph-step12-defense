@@ -37,7 +37,6 @@ async function restRequest(table, method, params, payload) {
   Object.entries(params).forEach(([name, value]) => url.searchParams.set(name, value));
   const headers = {
     apikey: key,
-    Authorization: 'Bearer ' + key,
     'Content-Type': 'application/json',
   };
   if (method !== 'GET') headers.Prefer = 'return=representation';

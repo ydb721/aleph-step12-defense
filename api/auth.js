@@ -1,9 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-// The publishable key is intentionally server-only in stage 5.
-// An optional Vercel environment variable can replace this public training key.
-const authKey = process.env.SUPABASE_PUBLISHABLE_KEY
-  || 'sb_publishable_E4o3qIRW_1RucMUHkOur2Q_gBN5SRqB';
+// The publishable key belongs to this deployment's independent Supabase project.
+const authKey = process.env.SUPABASE_PUBLISHABLE_KEY;
 
 const accessName = '__Host-byteback-access';
 const refreshName = '__Host-byteback-refresh';
@@ -11,7 +9,9 @@ const cookieFlags = 'Path=/; HttpOnly; Secure; SameSite=Strict';
 const noCache = 'no-store';
 
 function authClient() {
-  if (!process.env.SUPABASE_URL) throw new Error('MISSING_SUPABASE_URL');
+  if (!process.env.SUPABASE_URL || typeof authKey !== 'string' || !authKey.trim()) {
+    throw new Error('MISSING_SUPABASE_AUTH_CONFIGURATION');
+  }
   return createClient(process.env.SUPABASE_URL, authKey, {
     auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
   });

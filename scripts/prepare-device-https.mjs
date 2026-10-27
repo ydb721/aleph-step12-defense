@@ -211,12 +211,11 @@ export async function prepareDeviceHttps({ root = ROOT, outputDir, origin, supab
   const sourceEntries = [...files].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
     .map(([path, bytes]) => ({ path, sha256: digest(bytes) }));
   const authSource = files.get('api/auth.js').toString('utf8');
-  const fallbackPattern = /const authKey = process\.env\.SUPABASE_PUBLISHABLE_KEY\s*\|\|\s*'(sb_publishable_[A-Za-z0-9_-]+)';/gu;
-  const fallbackMatches = [...authSource.matchAll(fallbackPattern)];
-  if (fallbackMatches.length !== 1) fail('HTTPS_SNAPSHOT_AUTH_FALLBACK_PATTERN_CHANGED');
-  const forbiddenPublishableKeyHashes = [digest(fallbackMatches[0][1])];
-  files.set('api/auth.js', Buffer.from(authSource.replace(fallbackPattern,
-    'const authKey = process.env.SUPABASE_PUBLISHABLE_KEY;')));
+  if (!/const authKey = process\.env\.SUPABASE_PUBLISHABLE_KEY;/u.test(authSource)
+      || /\bsb_publishable_[A-Za-z0-9_-]+/u.test(authSource)) {
+    fail('HTTPS_SNAPSHOT_AUTH_CONFIGURATION_CONTRACT_CHANGED');
+  }
+  const forbiddenPublishableKeyHashes = [];
   const trialConfig = structuredClone(config);
   trialConfig.publicAppUrl = appOrigin;
   trialConfig.identityProvider.issuer = supabaseOrigin + '/auth/v1';

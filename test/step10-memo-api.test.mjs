@@ -32,7 +32,7 @@ async function call({ route = 'api/restore/[id].js', id = trusted.id, body,
     fetch: async (url, init) => {
       calls.push({ name: new URL(url).pathname.split('/').at(-1), method: init.method,
         params: Object.fromEntries(new URL(url).searchParams),
-        body: init.body === undefined ? null : JSON.parse(init.body) });
+        body: init.body === undefined ? null : JSON.parse(init.body), headers: init.headers });
       const response = responses.shift();
       assert.ok(response, 'unexpected RPC call');
       return { status: response.status ?? 200,
@@ -135,6 +135,9 @@ test('judge identity is forwarded unchanged to memo ownership and both recovery 
     body: { id, ...note }, responses: [{ body: [{ public_id: id }] }] });
   assert.equal(created.status, 201);
   assert.equal(created.calls[0].body.owner_id, userId);
+  assert.equal(created.calls[0].headers.apikey, 'test-only');
+  assert.equal(Object.hasOwn(created.calls[0].headers, 'Authorization'), false,
+    'a Supabase secret key is never sent as a Bearer JWT');
   const p = { ...preview(), id, ownerId: userId, backupKind: 'on_create', sealVerified: true };
   const result = await call({ id, kind: 'judge', userId, responses: [{ body: p },
     { body: { ...restored(p), ownerId: userId, owner_id: userId } }] });
