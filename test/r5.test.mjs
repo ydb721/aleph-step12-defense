@@ -76,9 +76,35 @@ test('isolated bundle checks use only GET and mark failed network requests as no
   }
 });
 
-test('stage 12 attack records preserve exact HTTP status and actual safe error codes', async () => {
+test('stage 12 bundle does not send unlinked GETs or claim their outcomes', async () => {
   const originalFetch = globalThis.fetch;
   const runtimeConfig = { ...config, step: 12,
+    originalApiUrl: 'https://fixture.supabase.co/rest/v1/memos' };
+  let calls = 0;
+  try {
+    globalThis.fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ error: 'AUTH_REQUIRED' }), { status: 401 });
+    };
+    const records = await runAttackChecks(runtimeConfig);
+    assert.equal(calls, 0, 'a stage-12 bundle must not create unlinked GETs');
+    assert.deepEqual(records.map(({ attackId, observed }) => [attackId, observed]), [
+      ['unauthenticated_memo_list', 'not_run'],
+      ['unauthenticated_memo_item', 'not_run'],
+      ['foreign_memo_scope', 'not_run'],
+      ['static_memo_empty', 'not_run'],
+      ['deployment_identity', 'not_run'],
+      ['direct_no_key_probe', 'not_run'],
+    ]);
+    assert.ok(records.every(({ expected }) => typeof expected === 'string' && expected.length > 0));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('steps 5-11 preserve real HTTP status and safe error codes', async () => {
+  const originalFetch = globalThis.fetch;
+  const runtimeConfig = { ...config, step: 11,
     originalApiUrl: 'https://fixture.supabase.co/rest/v1/memos' };
   const scenarios = [
     { status: 401, body: { error: 'AUTH_REQUIRED' }, expected: 'HTTP 401; error=AUTH_REQUIRED' },
@@ -115,9 +141,9 @@ test('stage 12 attack records preserve exact HTTP status and actual safe error c
   }
 });
 
-test('each executed stage 12 public check records its own response without reusing another result', async () => {
+test('steps 5-11 record each public check response without reusing results', async () => {
   const originalFetch = globalThis.fetch;
-  const runtimeConfig = { ...config, step: 12,
+  const runtimeConfig = { ...config, step: 11,
     originalApiUrl: 'https://fixture.supabase.co/rest/v1/memos' };
   const requestTypes = [];
   try {
