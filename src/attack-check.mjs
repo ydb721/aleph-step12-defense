@@ -43,6 +43,25 @@ export async function runAttackChecks(config) {
   }
 
   if (config.step < 5) throw new Error('5단계 이상 설정이 필요합니다.');
+  // A stage-12 bundle is not the judge's per-attack request history. Public
+  // GETs made during packaging cannot be tied to the judge's attack IDs.
+  // Do not perform unlinked probes or copy browser-only statuses into observed.
+  // With no linked request evidence, each candidate is truthfully not_run.
+  if (config.step === 12) return [
+    {attackId:'unauthenticated_memo_list',expected:'HTTP 401; error=AUTH_REQUIRED',
+      observed:'not_run'},
+    {attackId:'unauthenticated_memo_item',expected:'HTTP 401; error=AUTH_REQUIRED',
+      observed:'not_run'},
+    {attackId:'foreign_memo_scope',expected:'인증된 다른 소유자 메모 조회 거부',
+      observed:'not_run'},
+    {attackId:'static_memo_empty',expected:'정적 자료 0건',
+      observed:'not_run'},
+    {attackId:'deployment_identity',expected:'/aleph.json 열림',
+      observed:'not_run'},
+    {attackId:'direct_no_key_probe',expected:'키 없이 직접 자료 API 요청 거부',
+      observed:'not_run'},
+  ];
+
   const direct = new URL(config.originalApiUrl);
   if (base.protocol !== 'https:' || !base.hostname.endsWith('.vercel.app')
       || direct.protocol !== 'https:') throw new Error('HTTPS 주소를 확인해 주세요.');
